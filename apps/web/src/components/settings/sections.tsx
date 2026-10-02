@@ -1,12 +1,13 @@
 /** Individual settings screens. Each is self-contained and saves as you change it. */
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Download, LogOut, RefreshCw, Trash2 } from 'lucide-react';
-import { ENTITY_NAMES, initialRevisions, todayISO, type Settings } from '@student-os/core';
+import { ArrowDown, ArrowUp, Download, LogOut, RefreshCw, Trash2 } from 'lucide-react';
+import { APP_PAGES, ENTITY_NAMES, HOME_SECTIONS, initialRevisions, todayISO, type AppPage, type HomeSection, type Settings } from '@student-os/core';
 import { AuthForm } from '../AuthForm';
 import { SyncBadge } from '../Layout';
 import { ServerAddress } from '../ServerAddress';
-import { Button, Chip, Input, Select, Toggle } from '../ui';
+import { Button, Chip, cn, Input, Select, Toggle } from '../ui';
+import { HOME_SECTION_LABEL, PAGE_LABEL, UNHIDEABLE_PAGES } from '../../lib/app-prefs';
 import { logout } from '../../lib/auth';
 import { db, kvGet } from '../../lib/db';
 import { isNative } from '../../lib/platform';
@@ -305,6 +306,7 @@ export function NotificationsSection({ s }: { s: Settings }) {
 
 export function AppearanceSection({ s }: { s: Settings }) {
   return (
+    <>
     <SettingsGroup title="Look and feel">
       <SettingRow label="Theme">
         <Segmented label="Theme" value={s.theme} onChange={(v) => save({ theme: v })} options={[{ value: 'system', label: 'Auto' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
@@ -324,6 +326,74 @@ export function AppearanceSection({ s }: { s: Settings }) {
         </div>
       </SettingRow>
     </SettingsGroup>
+    <AppLayoutSettings s={s} />
+    </>
+  );
+}
+
+/** Home cards, the "Up next" card, start page and menu. AI Pilot can change all of these too. */
+function AppLayoutSettings({ s }: { s: Settings }) {
+  const app = s.app;
+  const saveApp = (patch: Partial<Settings['app']>) => save({ app: { ...app, ...patch } });
+  const cards = [...app.homeSections, ...HOME_SECTIONS.filter((k) => !app.homeSections.includes(k))];
+  const move = (k: HomeSection, step: -1 | 1) => {
+    const list = [...app.homeSections];
+    const i = list.indexOf(k);
+    const j = i + step;
+    if (i === -1 || j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j]!, list[i]!];
+    saveApp({ homeSections: list });
+  };
+  return (
+    <>
+      <SettingsGroup title="Home screen" footer="Tip: you can also ask AI Pilot, e.g. “hide the This week card” or “put attendance first”.">
+        {cards.map((k) => {
+          const on = app.homeSections.includes(k);
+          const i = app.homeSections.indexOf(k);
+          return (
+            <div key={k} className="flex items-center gap-1 px-4">
+              <div className={cn('min-w-0 flex-1', !on && 'text-muted')}>
+                <Toggle checked={on} onChange={(v) => saveApp({ homeSections: v ? [...app.homeSections, k] : app.homeSections.filter((x) => x !== k) })} label={HOME_SECTION_LABEL[k]} />
+              </div>
+              <button onClick={() => move(k, -1)} disabled={!on || i === 0} aria-label={`Move ${HOME_SECTION_LABEL[k]} up`} className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30">
+                <ArrowUp className="size-4" />
+              </button>
+              <button onClick={() => move(k, 1)} disabled={!on || i === app.homeSections.length - 1} aria-label={`Move ${HOME_SECTION_LABEL[k]} down`} className="rounded-lg p-1.5 text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-30">
+                <ArrowDown className="size-4" />
+              </button>
+            </div>
+          );
+        })}
+      </SettingsGroup>
+      <SettingsGroup title="Up next card" footer="Classes always show. Swipe the card left or right to see what's next or what came before.">
+        <SettingBlock>
+          <Toggle checked={app.upNext.tasks} onChange={(v) => saveApp({ upNext: { ...app.upNext, tasks: v } })} label="Tasks due today" description="Tasks with a due time" />
+          <Toggle checked={app.upNext.events} onChange={(v) => saveApp({ upNext: { ...app.upNext, events: v } })} label="Events and study sessions" />
+          <Toggle checked={app.upNext.reminders} onChange={(v) => saveApp({ upNext: { ...app.upNext, reminders: v } })} label="Reminders" />
+        </SettingBlock>
+      </SettingsGroup>
+      <SettingsGroup title="Navigation">
+        <SettingRow label="Open the app on">
+          <Select aria-label="Open the app on" value={app.startPage} onChange={(e) => saveApp({ startPage: e.target.value as AppPage })} className="h-9 w-auto">
+            {APP_PAGES.map((p) => (
+              <option key={p} value={p}>
+                {PAGE_LABEL[p]}
+              </option>
+            ))}
+          </Select>
+        </SettingRow>
+        <SettingBlock>
+          {APP_PAGES.filter((p) => !UNHIDEABLE_PAGES.includes(p)).map((p) => (
+            <Toggle
+              key={p}
+              checked={!app.hiddenPages.includes(p)}
+              onChange={(v) => saveApp({ hiddenPages: v ? app.hiddenPages.filter((x) => x !== p) : [...app.hiddenPages, p] })}
+              label={`Show ${PAGE_LABEL[p]} in the menu`}
+            />
+          ))}
+        </SettingBlock>
+      </SettingsGroup>
+    </>
   );
 }
 

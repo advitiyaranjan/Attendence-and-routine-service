@@ -73,7 +73,17 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
       holidaysForEveryBasket: settings.holidays,
       revisionIntervals: settings.revisionIntervals,
       theme: settings.theme,
+      accent: settings.accent,
+      weekStartsOn: settings.weekStartsOn === 0 ? 'sunday' : 'monday',
       classReminderMinutes: settings.notifications.categories.classes.offsets,
+      notificationTypesOn: Object.entries(settings.notifications.categories).filter(([, c]) => c.enabled).map(([k]) => k),
+      // How the app itself is laid out; change with update_settings.
+      app: {
+        homeCardsInOrder: settings.app.homeSections,
+        upNextCardShows: ['classes', ...Object.entries(settings.app.upNext).filter(([, on]) => on).map(([k]) => k)],
+        startPage: settings.app.startPage,
+        pagesHiddenFromMenu: settings.app.hiddenPages,
+      },
       sleepTime: `${settings.sleepWindow.start}–${settings.sleepWindow.end} (never schedule anything in it)`,
       aiPower: `${settings.aiPower} (user-only: you can't change this)`,
     };

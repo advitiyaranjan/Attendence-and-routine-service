@@ -11,7 +11,11 @@
  */
 import { z } from 'zod';
 import { isISODate, normalizeTime } from './dates';
-import { AI_PROTECTED_SETTINGS, type AIArea, type AIPermission, type AIPermissions } from './entities';
+import { AI_PROTECTED_SETTINGS, APP_PAGES, HOME_SECTIONS, type AIArea, type AIPermission, type AIPermissions, type NotificationCategory } from './entities';
+
+const NOTIFICATION_CATEGORIES = ['classes', 'attendance', 'revision', 'tasks', 'assignments', 'exams', 'studySessions', 'dailyReview', 'weeklyReview', 'attendanceRisk', 'reminders', 'aiSuggestions', 'sync'] as const satisfies readonly NotificationCategory[];
+/** update_settings keys that need the notifications permission rather than the settings one. */
+const NOTIFICATION_SETTING_KEYS = ['classReminderMinutes', 'notificationCategories'];
 
 const time = z.string().transform((v, ctx) => {
   const t = normalizeTime(v);
@@ -506,8 +510,13 @@ export const ACTIONS = {
   }),
   update_settings: define({
     name: 'update_settings',
-    description: 'Change app settings: attendance rule (min/target/safe %), daily study target, semester dates and holidays (both apply to every basket unless a basket sets its own), revision intervals, theme, class reminder minutes, sleep time (nothing is scheduled during sleep).',
-    params: '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, addHolidays?: YYYY-MM-DD[], removeHolidays?: YYYY-MM-DD[], revisionIntervals?: number[], theme?: system|light|dark, classReminderMinutes?: number[], sleepStart?: HH:MM, sleepEnd?: HH:MM } }',
+    description:
+      'Change app settings and how the app itself works: attendance rule (min/target/safe %), daily study target, semester dates and holidays (both apply to every basket unless a basket sets its own), revision intervals, college hours, week start, theme and accent colour, class reminder minutes, which notification types are on, sleep time (nothing is scheduled during sleep). ' +
+      'App layout: which home cards show and in what order (homeSections is the full visible list in order; or use showHomeCards/hideHomeCards), what the home "Up next" card swipes through besides classes (timed tasks due today, events, reminders), the page the app opens on, and pages hidden from the menu. ' +
+      `Home cards: ${HOME_SECTIONS.join(', ')}. Pages: ${APP_PAGES.join(', ')}. Notification types: ${NOTIFICATION_CATEGORIES.join(', ')}.`,
+    params:
+      '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, addHolidays?: YYYY-MM-DD[], removeHolidays?: YYYY-MM-DD[], revisionIntervals?: number[], collegeStart?: HH:MM, collegeEnd?: HH:MM, weekStartsOn?: sunday|monday, theme?: system|light|dark, accent?: indigo|blue|teal|rose|amber|violet, classReminderMinutes?: number[], notificationCategories?: { <type>: boolean }, sleepStart?: HH:MM, sleepEnd?: HH:MM, ' +
+      'homeSections?: card[], showHomeCards?: card[], hideHomeCards?: card[], upNextTasks?: boolean, upNextEvents?: boolean, upNextReminders?: boolean, startPage?: page, hidePages?: page[], showPages?: page[] } }',
     schema: z.object({
       changes: z.object({
         minAttendance: z.number().min(0).max(100).nullish(),
@@ -523,6 +532,20 @@ export const ACTIONS = {
         classReminderMinutes: z.array(z.number().int().min(0).max(1440)).max(8).nullish(),
         sleepStart: optTime,
         sleepEnd: optTime,
+        collegeStart: optTime,
+        collegeEnd: optTime,
+        weekStartsOn: z.enum(['sunday', 'monday']).nullish(),
+        accent: optStr(20),
+        notificationCategories: z.partialRecord(z.enum(NOTIFICATION_CATEGORIES), z.boolean()).nullish(),
+        homeSections: z.array(z.enum(HOME_SECTIONS)).max(HOME_SECTIONS.length).nullish(),
+        showHomeCards: z.array(z.enum(HOME_SECTIONS)).max(HOME_SECTIONS.length).nullish(),
+        hideHomeCards: z.array(z.enum(HOME_SECTIONS)).max(HOME_SECTIONS.length).nullish(),
+        upNextTasks: z.boolean().nullish(),
+        upNextEvents: z.boolean().nullish(),
+        upNextReminders: z.boolean().nullish(),
+        startPage: z.enum(APP_PAGES).nullish(),
+        hidePages: z.array(z.enum(APP_PAGES)).max(APP_PAGES.length).nullish(),
+        showPages: z.array(z.enum(APP_PAGES)).max(APP_PAGES.length).nullish(),
       }),
     }),
     kind: 'modify',
@@ -738,8 +761,9 @@ export function requiredPermissions(name: ActionName, params: Record<string, unk
   const needed = [...ACTIONS[name].permissions] as AIPermission[];
   if (name === 'update_settings') {
     const c = (params.changes ?? {}) as Record<string, unknown>;
-    const notif = c.classReminderMinutes !== null && c.classReminderMinutes !== undefined;
-    const other = Object.entries(c).some(([k, v]) => k !== 'classReminderMinutes' && v !== null && v !== undefined);
+    const set = ([, v]: [string, unknown]) => v !== null && v !== undefined;
+    const notif = Object.entries(c).some((e) => NOTIFICATION_SETTING_KEYS.includes(e[0]) && set(e));
+    const other = Object.entries(c).some((e) => !NOTIFICATION_SETTING_KEYS.includes(e[0]) && set(e));
     const out: AIPermission[] = [];
     if (other) out.push('modifySettings');
     if (notif) out.push('modifyNotifications');

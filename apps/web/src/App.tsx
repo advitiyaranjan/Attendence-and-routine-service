@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Route, Routes, useNavigate, useSearchParams } from 'react-router';
+import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { NotificationActionId } from '@student-os/core';
+import type { AppPage, NotificationActionId } from '@student-os/core';
 import { Layout, MorePage } from './components/Layout';
 import { Spinner, Splash } from './components/ui';
+import { PAGE_PATH } from './lib/app-prefs';
 import { performNotificationAction, type ActionPayload } from './lib/notifications';
 import { db } from './lib/db';
 import { SETTINGS_ID } from './lib/repo';
@@ -71,6 +72,18 @@ function useNotificationActions() {
   }, [navigate]);
 }
 
+/** Opens the student's chosen start page once per launch (only when the app opened on Home). */
+let startPageApplied = false;
+function useStartPage(page: AppPage | undefined) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    if (startPageApplied || !page) return;
+    startPageApplied = true;
+    if (page !== 'home' && location.pathname === '/' && !location.search) navigate(PAGE_PATH[page], { replace: true });
+  }, [page, location, navigate]);
+}
+
 export function App() {
   const settings = useLiveQuery(async () => (await db.entity('settings').get(SETTINGS_ID)) ?? null, []);
   const online = useApp((s) => s.online);
@@ -81,6 +94,7 @@ export function App() {
   const serverIssue = useApp((s) => s.serverIssue);
   const [gaveUpWaiting, setGaveUpWaiting] = useState(false);
   useNotificationActions();
+  useStartPage(settings === undefined ? undefined : settings?.onboarded ? (settings.app?.startPage ?? 'home') : undefined);
 
   // A returning student signing in on a new device: their settings arrive with the
   // first sync, so wait for it before deciding they're new (but never forever).

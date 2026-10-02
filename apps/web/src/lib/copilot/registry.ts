@@ -10,6 +10,8 @@
 import { v4 as uuid } from 'uuid';
 import {
   ACTIONS,
+  HOME_SECTIONS,
+  NOTIFICATION_CATEGORY_LABEL as NOTIFICATION_LABEL,
   PROTECTED_SETTING_MESSAGE,
   protectedSettingsIn,
   addDays,
@@ -29,6 +31,8 @@ import {
   WEEKDAYS,
   type ActionKind,
   type ActionName,
+  type AppPage,
+  type HomeSection,
   type Basket,
   type CalendarEvent,
   type ClassOccurrence,
@@ -46,6 +50,8 @@ import { flashcards as genFlashcards } from '../ai';
 import { db } from '../db';
 import { computeAttendance, loadPlannerData, loadSettings, occurrencesBetween } from '../queries';
 import { create, createMany, remove, removeMany, update, saveSettings, sortBaskets } from '../repo';
+import { HOME_SECTION_LABEL, PAGE_LABEL, UNHIDEABLE_PAGES } from '../app-prefs';
+import { ACCENT_NAMES } from '../theme';
 import { REF } from './context';
 
 // ---------------------------------------------------------------------------
@@ -1329,6 +1335,61 @@ const H: Record<ActionName, Handler> = {
         patch.notifications = { ...s.notifications, categories: { ...cats, classes: { ...cats.classes, enabled: offsets.length > 0, offsets } } };
         lines.push(`Class reminders: ${cats.classes.offsets.join(', ') || 'off'} → ${offsets.join(', ') || 'off'} min before`);
       }
+      if (c.notificationCategories) {
+        const base = patch.notifications ?? s.notifications;
+        const cats = { ...base.categories };
+        for (const [k, on] of Object.entries(c.notificationCategories as Record<keyof typeof cats, boolean>)) {
+          const key = k as keyof typeof cats;
+          if (cats[key].enabled === on) continue;
+          cats[key] = { ...cats[key], enabled: on };
+          lines.push(`${NOTIFICATION_LABEL[key] ?? key} notifications: ${on ? 'off → on' : 'on → off'}`);
+        }
+        if (JSON.stringify(cats) !== JSON.stringify(base.categories)) patch.notifications = { ...base, categories: cats };
+      }
+      set('collegeStart', 'College starts', c.collegeStart);
+      set('collegeEnd', 'College ends', c.collegeEnd);
+      if (c.weekStartsOn) set('weekStartsOn', 'Week starts on', c.weekStartsOn === 'sunday' ? 0 : 1, (v) => (v === 0 ? 'Sunday' : 'Monday'));
+      if (c.accent) {
+        const accent = String(c.accent).toLowerCase();
+        if (!ACCENT_NAMES.includes(accent)) return err(`I can't use "${c.accent}" as the accent colour. Choose one of: ${ACCENT_NAMES.join(', ')}.`);
+        set('accent', 'Accent colour', accent);
+      }
+
+      // App layout and behaviour.
+      const app = { ...s.app, upNext: { ...s.app.upNext } };
+      let sections = c.homeSections ? [...new Set(c.homeSections as HomeSection[])] : [...app.homeSections];
+      for (const k of (c.hideHomeCards ?? []) as HomeSection[]) sections = sections.filter((x) => x !== k);
+      for (const k of (c.showHomeCards ?? []) as HomeSection[]) {
+        if (sections.includes(k)) continue;
+        // Back in its usual place: after the last visible card that normally comes before it.
+        const before = HOME_SECTIONS.slice(0, HOME_SECTIONS.indexOf(k)) as readonly HomeSection[];
+        let at = 0;
+        sections.forEach((x, i) => before.includes(x) && (at = i + 1));
+        sections.splice(at, 0, k);
+      }
+      if (JSON.stringify(sections) !== JSON.stringify(app.homeSections)) {
+        lines.push(`Home cards: ${app.homeSections.map((k) => HOME_SECTION_LABEL[k]).join(', ') || 'none'} → ${sections.map((k) => HOME_SECTION_LABEL[k]).join(', ') || 'none'}`);
+        app.homeSections = sections;
+      }
+      for (const [key, label] of [['tasks', 'tasks'], ['events', 'events'], ['reminders', 'reminders']] as const) {
+        const v = c[`upNext${label[0]!.toUpperCase()}${label.slice(1)}`] as boolean | null | undefined;
+        if (v === null || v === undefined || v === app.upNext[key]) continue;
+        app.upNext[key] = v;
+        lines.push(`"Up next" card shows ${label}: ${v ? 'no → yes' : 'yes → no'}`);
+      }
+      if (c.startPage && c.startPage !== app.startPage) {
+        lines.push(`App opens on: ${PAGE_LABEL[app.startPage]} → ${PAGE_LABEL[c.startPage as AppPage]}`);
+        app.startPage = c.startPage;
+      }
+      if (c.hidePages?.length || c.showPages?.length) {
+        const shown = new Set<AppPage>(c.showPages ?? []);
+        const hidden = [...new Set([...app.hiddenPages.filter((p) => !shown.has(p)), ...((c.hidePages ?? []) as AppPage[]).filter((p) => !UNHIDEABLE_PAGES.includes(p))])];
+        if (JSON.stringify(hidden) !== JSON.stringify(app.hiddenPages)) {
+          lines.push(`Hidden from menu: ${app.hiddenPages.map((p) => PAGE_LABEL[p]).join(', ') || 'none'} → ${hidden.map((p) => PAGE_LABEL[p]).join(', ') || 'none'}`);
+          app.hiddenPages = hidden;
+        }
+      }
+      if (JSON.stringify(app) !== JSON.stringify(s.app)) patch.app = app;
       if (!lines.length) return err('Your settings already look like that.');
       return proposal('update_settings', params, { title: 'Change settings', heading: 'Settings', lines, resolved: { patch } });
     },

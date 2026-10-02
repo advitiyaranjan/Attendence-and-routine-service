@@ -425,6 +425,32 @@ export const aiActionLogSchema = syncMeta.extend({
 });
 export type AIActionLog = z.infer<typeof aiActionLogSchema>;
 
+/** Home screen cards, in their default order. "upNext" is the swipeable next-class/task card. */
+export const HOME_SECTIONS = ['upNext', 'overview', 'markAttendance', 'priorities', 'schedule', 'attendance', 'revision', 'comingUp', 'thisWeek', 'aiPilot'] as const;
+export type HomeSection = (typeof HOME_SECTIONS)[number];
+/** Pages a student can hide from the menu or open the app on. */
+export const APP_PAGES = ['home', 'assistant', 'todos', 'calendar', 'revision', 'attendance', 'subjects', 'notes', 'deadlines', 'analytics', 'classes', 'tasks', 'reminders', 'review', 'ai-activity'] as const;
+export type AppPage = (typeof APP_PAGES)[number];
+
+/** How the app itself behaves: layout and features the student (or AI Pilot) can switch around. */
+export const appPreferencesSchema = z.object({
+  /** Visible home cards, in order. Cards not listed are hidden. */
+  homeSections: z.array(z.enum(HOME_SECTIONS)).max(HOME_SECTIONS.length).default([...HOME_SECTIONS]),
+  /** What the home "Up next" card cycles through besides classes. */
+  upNext: z
+    .object({
+      tasks: z.boolean().default(true),
+      events: z.boolean().default(true),
+      reminders: z.boolean().default(false),
+    })
+    .prefault({}),
+  /** Page the app opens on. */
+  startPage: z.enum(APP_PAGES).default('home'),
+  /** Pages hidden from the menu (still reachable by link). Home, AI Pilot and Settings can't be hidden. */
+  hiddenPages: z.array(z.enum(APP_PAGES)).max(APP_PAGES.length).default([]),
+});
+export type AppPreferences = z.infer<typeof appPreferencesSchema>;
+
 export const settingsSchema = syncMeta.extend({
   profile: z
     .object({
@@ -464,6 +490,7 @@ export const settingsSchema = syncMeta.extend({
   /** IANA timezone, used by the server to send push reminders at the right wall-clock time. */
   timezone: z.string().max(64).default('UTC'),
   notifications: notificationSettingsSchema.prefault({}),
+  app: appPreferencesSchema.prefault({}),
   aiPermissions: aiPermissionsSchema.prefault({}),
   onboarded: z.boolean().default(false),
 });

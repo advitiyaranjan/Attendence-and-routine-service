@@ -1,7 +1,9 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Clock, Flame, ListChecks, MapPin, Repeat, Sparkles, Target, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Flame, ListChecks, Repeat, Sparkles, Target, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
 import {
   addDays,
+  HOME_SECTIONS,
+  type HomeSection,
   computeStreak,
   diffDays,
   fmtPct,
@@ -13,9 +15,10 @@ import {
   type RecallRating,
   type RevisionSchedule,
 } from '@student-os/core';
-import { useState } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AskAI } from '../components/AskAI';
 import { ClassRow } from '../components/ClassRow';
+import { UpNext, upNextItems } from '../components/UpNext';
 import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
@@ -49,9 +52,6 @@ export function Dashboard() {
 
   const activeClasses = classes.filter((c) => c.status !== 'cancelled' && c.status !== 'rescheduled');
   const minutesNow = nowMinutes(now);
-  const nextClass = activeClasses.find((c) => timeToMinutes(c.endTime) > minutesNow);
-  const nextSummary = nextClass && attendance?.subjects.find((s) => s.subject.id === nextClass.subjectId)?.summary;
-  const inProgress = nextClass && timeToMinutes(nextClass.startTime) <= minutesNow;
 
   const openTasks = tasks.filter((t) => t.status !== 'done' && ((t.plannedDate && t.plannedDate <= today) || (t.dueDate && t.dueDate <= today)));
   const priorities = rankTasks(tasks, today).slice(0, 3);
@@ -87,6 +87,8 @@ export function Dashboard() {
   const revisedWeek = revisions.filter((r) => r.completedAt && r.completedAt.slice(0, 10) >= weekStart).length;
   const classesLeft = activeClasses.filter((c) => timeToMinutes(c.endTime) > minutesNow).length;
   const todaysEvents = events.filter((e) => e.date === today && !e.deletedAt).sort((a, b) => (a.startTime ?? '99').localeCompare(b.startTime ?? '99'));
+  const reminders = useAll('reminder') ?? [];
+  const upNext = upNextItems(today, { classes, tasks, events, reminders }, settings.app.upNext);
   const aiOn = settings.aiPermissions.enabled && online && aiAvailable !== false;
 
   const plural = (n: number, word: string, many = word + 's') => `${n} ${n === 1 ? word : many}`;
@@ -96,6 +98,7 @@ export function Dashboard() {
   const firstName = settings.profile.name.split(' ')[0];
 
   return (
+    <HomeLayout.Provider value={settings.app.homeSections}>
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -110,70 +113,50 @@ export function Dashboard() {
       <AskAI placeholder="Ask AI anything…" prompts={['What do I need to do today?', 'Plan my day', 'How is my attendance?']} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="min-w-0 space-y-5 lg:col-span-2">
-          {/* Next class */}
-          <section className="relative overflow-hidden rounded-3xl bg-accent p-5 text-accent-ink shadow-pop sm:p-6">
-            <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-white/10" />
-            <div aria-hidden className="pointer-events-none absolute -bottom-20 right-20 size-40 rounded-full bg-white/5" />
-            <div className="relative">
-              <div className="text-xs font-semibold uppercase tracking-wider opacity-80">{inProgress ? 'Happening now' : 'Next class'}</div>
-              {nextClass ? (
-                <>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight">{subjects.get(nextClass.subjectId)?.name ?? 'Class'}</div>
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-90">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock className="size-4" /> {formatTime12(nextClass.startTime)} – {formatTime12(nextClass.endTime)}
-                    </span>
-                    {nextClass.room && (
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="size-4" /> Room {nextClass.room}
-                      </span>
-                    )}
-                    {!inProgress && <span>in {formatMinutes(timeToMinutes(nextClass.startTime) - minutesNow)}</span>}
-                  </div>
-                  {nextSummary && nextSummary.conducted > 0 && (
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
-                      Attendance <strong className="tabular">{fmtPct(nextSummary.percent)}</strong>
-                      {(nextSummary.risk === 'at_risk' || nextSummary.risk === 'below_min') && <AlertTriangle className="size-4" aria-label="Below target" />}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="mt-2 text-lg font-semibold">{classes.length ? 'No more classes today 🎉' : 'No classes today'}</div>
-              )}
+        <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
+          <Slot k="upNext">
+            <UpNext
+              items={upNext}
+              minutesNow={minutesNow}
+              hadClasses={classes.length > 0}
+              subjects={subjects}
+              attendanceFor={(id) => attendance?.subjects.find((s) => s.subject.id === id)?.summary}
+              today={today}
+            />
+          </Slot>
+
+          <Slot k="overview">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <StatCard
+                to="/todos"
+                icon={ListChecks}
+                label="Tasks"
+                value={openTasks.length}
+                sub={doneToday ? `${doneToday} done today` : 'due or planned'}
+                progress={doneToday + openTasks.length ? (doneToday / (doneToday + openTasks.length)) * 100 : undefined}
+              />
+              <StatCard to="/calendar" icon={CalendarDays} label="Schedule" value={classesLeft + todaysEvents.filter((e) => !e.completedAt).length} sub={`${plural(classesLeft, 'class', 'classes')} · ${plural(todaysEvents.length, 'event')}`} />
+              <StatCard
+                to="/analytics"
+                icon={Target}
+                label="Study"
+                value={formatMinutes(studyToday)}
+                sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
+                progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
+              />
+              <StatCard
+                to="/assistant"
+                icon={Bot}
+                label="AI Pilot"
+                value={aiOn ? 'Ready' : settings.aiPermissions.enabled ? 'Offline' : 'Off'}
+                sub={aiOn ? `${settings.aiPower[0]!.toUpperCase()}${settings.aiPower.slice(1)} power` : settings.aiPermissions.enabled ? 'Needs internet' : 'Turn on in Settings'}
+                tone={aiOn ? 'good' : 'muted'}
+              />
             </div>
-          </section>
+          </Slot>
 
-          {/* Overview */}
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <StatCard
-              to="/todos"
-              icon={ListChecks}
-              label="Tasks"
-              value={openTasks.length}
-              sub={doneToday ? `${doneToday} done today` : 'due or planned'}
-              progress={doneToday + openTasks.length ? (doneToday / (doneToday + openTasks.length)) * 100 : undefined}
-            />
-            <StatCard to="/calendar" icon={CalendarDays} label="Schedule" value={classesLeft + todaysEvents.filter((e) => !e.completedAt).length} sub={`${plural(classesLeft, 'class', 'classes')} · ${plural(todaysEvents.length, 'event')}`} />
-            <StatCard
-              to="/analytics"
-              icon={Target}
-              label="Study"
-              value={formatMinutes(studyToday)}
-              sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
-              progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
-            />
-            <StatCard
-              to="/assistant"
-              icon={Bot}
-              label="AI Pilot"
-              value={aiOn ? 'Ready' : settings.aiPermissions.enabled ? 'Offline' : 'Off'}
-              sub={aiOn ? `${settings.aiPower[0]!.toUpperCase()}${settings.aiPower.slice(1)} power` : settings.aiPermissions.enabled ? 'Needs internet' : 'Turn on in Settings'}
-              tone={aiOn ? 'good' : 'muted'}
-            />
-          </div>
-
-          {unmarked.length > 0 && (
+          <Slot k="markAttendance">
+            {unmarked.length > 0 && (
             <Card>
               <SectionTitle action={<span className="text-xs text-muted">{unmarked.length} to mark</span>}>Did you attend?</SectionTitle>
               <div className="divide-y divide-line">
@@ -193,8 +176,10 @@ export function Dashboard() {
                 </Link>
               )}
             </Card>
-          )}
+            )}
+          </Slot>
 
+          <Slot k="priorities">
           <Card>
             <SectionTitle action={<Link to="/todos" className="text-xs font-medium text-accent">Open Todos</Link>}>Today's priorities</SectionTitle>
             {priorities.length === 0 && dueRevisions.length === 0 ? (
@@ -231,7 +216,9 @@ export function Dashboard() {
               </ul>
             )}
           </Card>
+          </Slot>
 
+          <Slot k="schedule">
           <Card>
             <SectionTitle action={<Link to="/calendar" className="text-xs font-medium text-accent">Calendar</Link>}>Today's schedule</SectionTitle>
             {classes.length === 0 && todaysEvents.length === 0 ? (
@@ -257,9 +244,11 @@ export function Dashboard() {
               </div>
             )}
           </Card>
+          </Slot>
         </div>
 
-        <div className="min-w-0 space-y-5">
+        <div className="flex min-w-0 flex-col gap-5">
+          <Slot k="attendance">
           <Card>
             <SectionTitle action={<Link to="/attendance" className="text-xs font-medium text-accent">Details</Link>}>Attendance</SectionTitle>
             {attendance && attendance.overall.conducted > 0 && (
@@ -294,7 +283,9 @@ export function Dashboard() {
               </ul>
             )}
           </Card>
+          </Slot>
 
+          <Slot k="revision">
           <Card>
             <SectionTitle>Revision</SectionTitle>
             <div className="flex items-center gap-3">
@@ -314,7 +305,9 @@ export function Dashboard() {
               </Button>
             </Link>
           </Card>
+          </Slot>
 
+          <Slot k="comingUp">
           {(upcomingExams.length > 0 || dueSoon.length > 0) && (
             <Card>
               <SectionTitle action={<Link to="/deadlines" className="text-xs font-medium text-accent">All</Link>}>Coming up</SectionTitle>
@@ -336,7 +329,9 @@ export function Dashboard() {
               </ul>
             </Card>
           )}
+          </Slot>
 
+          <Slot k="thisWeek">
           <Card>
             <SectionTitle>This week</SectionTitle>
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -357,7 +352,9 @@ export function Dashboard() {
               </p>
             </div>
           </Card>
+          </Slot>
 
+          <Slot k="aiPilot">
           <Link to="/assistant" className="group block rounded-2xl border border-accent/25 bg-accent-soft p-4 transition-colors hover:border-accent/50 sm:p-5">
             <div className="flex items-center gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink">
@@ -370,6 +367,7 @@ export function Dashboard() {
               <ArrowRight className="size-4 shrink-0 text-accent transition-transform group-hover:translate-x-0.5" />
             </div>
           </Link>
+          </Slot>
         </div>
       </div>
 
@@ -383,7 +381,17 @@ export function Dashboard() {
         />
       </Modal>
     </div>
+    </HomeLayout.Provider>
   );
+}
+
+/** Visible home cards, in order (Settings → Appearance, or ask AI Pilot). */
+const HomeLayout = createContext<readonly HomeSection[]>(HOME_SECTIONS);
+
+function Slot({ k, children }: { k: HomeSection; children: ReactNode }) {
+  const order = useContext(HomeLayout).indexOf(k);
+  if (order === -1 || !children) return null;
+  return <div style={{ order }}>{children}</div>;
 }
 
 function StatCard({ to, icon: Icon, label, value, sub, progress, tone }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tone?: 'good' | 'muted' }) {

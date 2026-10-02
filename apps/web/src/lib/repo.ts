@@ -216,7 +216,7 @@ export function normalizeSettings(s: Settings | undefined): Settings {
   const d = defaultSettings();
   const parsed = settingsSchema.safeParse(s);
   if (parsed.success) return parsed.data;
-  return { ...d, ...s, profile: { ...d.profile, ...s.profile }, aiPermissions: { ...d.aiPermissions, ...s.aiPermissions, access: { ...d.aiPermissions.access, ...s.aiPermissions?.access } } };
+  return { ...d, ...s, profile: { ...d.profile, ...s.profile }, app: { ...d.app, ...s.app, upNext: { ...d.app.upNext, ...s.app?.upNext } }, aiPermissions: { ...d.aiPermissions, ...s.aiPermissions, access: { ...d.aiPermissions.access, ...s.aiPermissions?.access } } };
 }
 
 export async function getSettings(): Promise<Settings> {

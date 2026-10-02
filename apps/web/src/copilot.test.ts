@@ -4,7 +4,7 @@
  */
 import 'fake-indexeddb/auto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { ACTIONS, instanceIdFor, refOf, validateIntents } from '@student-os/core';
+import { ACTIONS, HOME_SECTIONS, instanceIdFor, refOf, requiredPermissions, validateIntents } from '@student-os/core';
 
 vi.useFakeTimers({ toFake: ['Date'] });
 vi.setSystemTime(new Date(2026, 9, 2, 12, 0));
@@ -191,6 +191,46 @@ describe('subjects and settings', () => {
     expect([s.minAttendance, s.dailyStudyTargetMinutes, s.notifications.categories.classes.offsets]).toEqual([80, 180, [30, 10]]);
     await undoLog(done.logId!);
     expect((await getSettings()).notifications.categories.classes.offsets).toEqual([15]);
+  });
+
+  it('changes how the app works: home cards, Up next, start page, menu, notifications', async () => {
+    const r = await prepareAction('update_settings', {
+      changes: { hideHomeCards: ['thisWeek'], upNextReminders: true, startPage: 'todos', hidePages: ['notes', 'home'], notificationCategories: { revision: false } },
+    });
+    expect(r.kind).toBe('proposal');
+    if (r.kind !== 'proposal') return;
+    expect(r.proposal.lines).toContain('"Up next" card shows reminders: no → yes');
+    expect(r.proposal.lines).toContain('App opens on: Home → Todos');
+    const done = await confirmProposal(r.proposal);
+    const s = await getSettings();
+    expect(s.app.homeSections).not.toContain('thisWeek');
+    expect(s.app.upNext.reminders).toBe(true);
+    expect(s.app.startPage).toBe('todos');
+    expect(s.app.hiddenPages).toEqual(['notes']); // Home can't be hidden
+    expect(s.notifications.categories.revision.enabled).toBe(false);
+
+    // Showing a card again puts it back in its usual place.
+    const back = await prepareAction('update_settings', { changes: { showHomeCards: ['thisWeek'] } });
+    if (back.kind !== 'proposal') throw new Error('expected a proposal');
+    await confirmProposal(back.proposal);
+    expect((await getSettings()).app.homeSections).toEqual([...HOME_SECTIONS]);
+
+    await undoLog(done.logId!);
+    expect((await getSettings()).app.startPage).toBe('home');
+  });
+
+  it('reorders home cards from a full list', async () => {
+    const order = ['attendance', 'upNext', 'priorities'] as const;
+    const r = await prepareAction('update_settings', { changes: { homeSections: order } });
+    if (r.kind !== 'proposal') throw new Error('expected a proposal');
+    const done = await confirmProposal(r.proposal);
+    expect((await getSettings()).app.homeSections).toEqual(order);
+    await undoLog(done.logId!);
+  });
+
+  it('needs the notifications permission only for notification changes', () => {
+    expect(requiredPermissions('update_settings', { changes: { notificationCategories: { exams: false } } })).toEqual(['modifyNotifications']);
+    expect(requiredPermissions('update_settings', { changes: { startPage: 'todos' } })).toEqual(['modifySettings']);
   });
 
   it('updates the profile, study hours included, and undoes it', async () => {

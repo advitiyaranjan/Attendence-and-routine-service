@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/db';
 import { logout } from '../lib/auth';
+import { hiddenPaths } from '../lib/app-prefs';
 import { useMedia, useSettings } from '../lib/hooks';
 import { markAllRead } from '../lib/notifications';
 import { useCopilot } from '../lib/copilot/store';
@@ -81,6 +82,12 @@ const NAV_MORE: NavItem[] = [
   { to: '/review', label: 'Daily review', icon: ClipboardCheck },
   { to: '/ai-activity', label: 'AI activity', icon: History },
 ];
+
+/** Drops pages the student hid from the menu (Settings → Appearance, or AI Pilot). */
+function useShown() {
+  const hidden = hiddenPaths(useSettings().app.hiddenPages);
+  return (items: NavItem[]) => items.filter((i) => !hidden.has(i.to));
+}
 
 const MOBILE_NAV: NavItem[] = [
   { to: '/', label: 'Home', icon: Home },
@@ -262,6 +269,7 @@ function Avatar({ size = 'size-8' }: { size?: string }) {
 /** Profile button: account details, every section (on phones), settings and sign out. */
 function ProfileMenu() {
   const [open, setOpen] = useState(false);
+  const shown = useShown();
   const user = useApp((s) => s.user);
   const settings = useSettings();
   const navigate = useNavigate();
@@ -284,7 +292,7 @@ function ProfileMenu() {
           <SyncBadge />
         </div>
         <div className="grid grid-cols-3 gap-2 border-b border-line p-3 md:hidden">
-          {[...NAV.slice(4), ...NAV_MORE].map(({ to, label, icon: Icon }) => (
+          {shown([...NAV.slice(4), ...NAV_MORE]).map(({ to, label, icon: Icon }) => (
             <button key={to} onClick={() => go(to)} className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface-2 px-1 py-3 text-xs text-ink-2 active:scale-[0.98]">
               <Icon className="size-5 text-accent" />
               {label}
@@ -547,6 +555,7 @@ export function Layout() {
   const user = useApp((s) => s.user);
   const settings = useSettings();
   const openCopilot = useCopilot((s) => s.setOpen);
+  const shown = useShown();
   const navigate = useNavigate();
   useKeyboardShortcuts();
   const sidebar = useSidebar();
@@ -577,11 +586,11 @@ export function Layout() {
           </button>
         </div>
         <nav className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3" aria-label="Main">
-          {NAV.map((item) => (
+          {shown(NAV).map((item) => (
             <SideLink key={item.to} item={item} compact={!wide} />
           ))}
           {wide ? <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-muted">More</div> : <div className="mx-2 my-3 border-t border-line" />}
-          {NAV_MORE.map((item) => (
+          {shown(NAV_MORE).map((item) => (
             <SideLink key={item.to} item={item} compact={!wide} />
           ))}
         </nav>
@@ -640,7 +649,7 @@ export function Layout() {
 
       <nav className="hide-on-kb safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md md:hidden" aria-label="Main">
         <div className="flex">
-          {MOBILE_NAV.map(({ to, label, icon: Icon }) => (
+          {shown(MOBILE_NAV).map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cn('group flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
               {({ isActive }) => (
                 <>
