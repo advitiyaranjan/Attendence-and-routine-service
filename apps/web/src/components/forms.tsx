@@ -67,6 +67,23 @@ export function SubjectSelect({ value, onChange, allowNone = true }: { value: st
   );
 }
 
+export function BasketSelect({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const baskets = useAll('basket') ?? [];
+  return (
+    <Select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+      <option value="">No basket (global rules)</option>
+      {baskets
+        .slice()
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+        .map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.icon} {b.name}
+          </option>
+        ))}
+    </Select>
+  );
+}
+
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
 export function TaskForm({ initial, onDone, defaultDate }: { initial?: Task; onDone: () => void; defaultDate?: string }) {
@@ -482,7 +499,9 @@ export function ExtraClassForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: () => void }) {
+export function SubjectForm({ initial, onDone, defaultBasketId = null }: { initial?: Subject; onDone: () => void; defaultBasketId?: string | null }) {
+  const hasBaskets = (useAll('basket') ?? []).length > 0;
+  const [basketId, setBasketId] = useState<string | null>(initial ? initial.basketId : defaultBasketId);
   const [name, setName] = useState(initial?.name ?? '');
   const [code, setCode] = useState(initial?.code ?? '');
   const [faculty, setFaculty] = useState(initial?.faculty ?? '');
@@ -506,6 +525,7 @@ export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: ()
           minAttendance: minAttendance ? Number(minAttendance) : null,
           targetAttendance: targetAttendance ? Number(targetAttendance) : null,
           compulsory,
+          basketId,
         };
         if (initial) await update('subject', initial.id, data);
         else await create('subject', data);
@@ -526,7 +546,12 @@ export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: ()
         <Field label="Faculty" className="col-span-2">
           <Input value={faculty} onChange={(e) => setFaculty(e.target.value)} />
         </Field>
-        <Field label="Minimum attendance %" hint="Blank = your global setting">
+        {hasBaskets && (
+          <Field label="Basket" className="col-span-2" hint="Its holidays, term dates and attendance rules apply to this subject.">
+            <BasketSelect value={basketId} onChange={setBasketId} />
+          </Field>
+        )}
+        <Field label="Minimum attendance %" hint="Blank = the basket's or global setting">
           <Input type="number" min={0} max={100} value={minAttendance} onChange={(e) => setMin(e.target.value)} />
         </Field>
         <Field label="Target attendance %">

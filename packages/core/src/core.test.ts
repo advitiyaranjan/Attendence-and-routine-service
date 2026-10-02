@@ -22,6 +22,8 @@ import {
   remainingClassesBySubject,
   resolveOccurrences,
   resolveWrite,
+  rulesFrom,
+  thresholdsFor,
   riskLevel,
   scoreTask,
   summarizeSubject,
@@ -174,6 +176,38 @@ describe('recurrence', () => {
     const remaining = remainingClassesBySubject([schedule], [], '2026-10-06', { semesterEnd: '2026-10-31' });
     expect(remaining?.get('os')).toBe(3); // Oct 12, 19, 26
     expect(remainingClassesBySubject([schedule], [], '2026-10-06', {})).toBeNull();
+  });
+
+  describe('baskets', () => {
+    const meta = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, version: 1, deviceId: 'd', syncStatus: 'synced' as const };
+    const basket = { ...meta, id: 'coaching', name: 'Coaching', icon: '📚', color: '#000', holidays: ['2026-10-19'], termStart: null, termEnd: '2026-10-25', minAttendance: 60, targetAttendance: null, order: 0 };
+    const settings = { holidays: ['2026-10-12'], semesterStart: null, semesterEnd: '2026-10-31' };
+    const coachingClass = { ...schedule, id: 'sched-2', subjectId: 'physics' };
+    const rules = rulesFrom(settings, [{ id: 'os', basketId: null }, { id: 'physics', basketId: 'coaching' }], [basket]);
+
+    it("applies global holidays to every basket and a basket's own only to its subjects", () => {
+      const occ = generateOccurrences([schedule, coachingClass], '2026-10-01', '2026-10-31', rules);
+      expect(occ.filter((o) => o.subjectId === 'os').map((o) => o.date)).toEqual(['2026-10-05', '2026-10-19', '2026-10-26']);
+      expect(occ.filter((o) => o.subjectId === 'physics').map((o) => o.date)).toEqual(['2026-10-05']); // 12 global holiday, 19 own holiday, 26 after term end
+    });
+
+    it("counts remaining classes up to each basket's term end", () => {
+      const remaining = remainingClassesBySubject([schedule, coachingClass], [], '2026-10-06', rules);
+      expect(remaining?.get('os')).toBe(2); // 19, 26
+      expect(remaining?.get('physics') ?? 0).toBe(0);
+    });
+
+    it('ignores deleted baskets', () => {
+      const r = rulesFrom(settings, [{ id: 'physics', basketId: 'coaching' }], [{ ...basket, deletedAt: '2026-02-01T00:00:00.000Z' }]);
+      expect(r.bySubject).toEqual({});
+    });
+
+    it('takes attendance thresholds from subject, then basket, then settings', () => {
+      const s = { minAttendance: 75, targetAttendance: 80, safeAttendance: 85 };
+      expect(thresholdsFor(s, undefined, basket)).toMatchObject({ min: 60, target: 80 });
+      expect(thresholdsFor(s, { minAttendance: 50 } as never, basket).min).toBe(50);
+      expect(thresholdsFor(s).min).toBe(75);
+    });
   });
 });
 

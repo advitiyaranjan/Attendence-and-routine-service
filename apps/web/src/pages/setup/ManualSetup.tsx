@@ -136,18 +136,6 @@ function BasicsStep() {
             <Input type="date" value={draft.semesterEnd ?? ''} onChange={(e) => patch({ semesterEnd: e.target.value || null })} />
           </Field>
         </div>
-        <Field label="Working days" group>
-          <div className="flex flex-wrap gap-1.5">
-            {WEEKDAY_SHORT.map((d, i) => {
-              const on = draft.workingDays.includes(i);
-              return (
-                <Chip key={d} selected={on} onClick={() => patch({ workingDays: on ? draft.workingDays.filter((x) => x !== i) : [...draft.workingDays, i].sort() })}>
-                  {d}
-                </Chip>
-              );
-            })}
-          </div>
-        </Field>
       </Panel>
     </>
   );

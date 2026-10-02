@@ -20,6 +20,7 @@ import { fmtPct } from './attendance';
 import { addDays, diffDays, formatTime12, minutesToTime, timeToMinutes, weekdayOf, type ISODate } from './dates';
 import type {
   Assignment,
+  Basket,
   CalendarEvent,
   ClassInstance,
   ClassSchedule,
@@ -110,6 +111,7 @@ export interface PlannerData {
   assignments: Assignment[];
   events: CalendarEvent[];
   reminders: Reminder[];
+  baskets?: Basket[];
 }
 
 export const toStamp = (date: ISODate, minutes: number) => diffDays('1970-01-01', date) * 1440 + minutes;
@@ -175,7 +177,7 @@ export function planNotifications(data: PlannerData, now: LocalMoment, lookbackM
       data.instances,
       addDays(fromDate, -1),
       fromStamp(windowEnd + maxBefore).date,
-      rulesFrom(settings),
+      rulesFrom(settings, data.subjects, data.baskets),
     );
     for (const o of occ) {
       const subject = subjects.get(o.subjectId);
@@ -451,7 +453,7 @@ export function planNotifications(data: PlannerData, now: LocalMoment, lookbackM
       });
     }
     if (cats.aiSuggestions.enabled && settings.aiPermissions.enabled) {
-      const classes = resolveOccurrences(data.schedules.filter((s) => !s.deletedAt), data.instances, date, date, rulesFrom(settings)).filter(
+      const classes = resolveOccurrences(data.schedules.filter((s) => !s.deletedAt), data.instances, date, date, rulesFrom(settings, data.subjects, data.baskets)).filter(
         (o) => o.status !== 'cancelled' && o.status !== 'rescheduled',
       ).length;
       const revs = data.revisions.filter((r) => !r.deletedAt && r.status === 'pending' && r.dueDate <= date).length;
@@ -480,12 +482,12 @@ export function planNotifications(data: PlannerData, now: LocalMoment, lookbackM
     const latest = toStamp(now.date, 21 * 60);
     if (nowStamp >= earliest && nowStamp <= latest) {
       const overview = attendanceOverview(data, now.date);
-      for (const { subject, summary } of overview.subjects) {
+      for (const { subject, summary, thresholds } of overview.subjects) {
         if (summary.percent === null || summary.conducted < 3) continue;
         const canMiss = summary.projection ? summary.projection.maxMissable : summary.canMissForMin;
         const risky = summary.risk === 'below_min' || canMiss <= cats.attendanceRisk.margin;
         if (!risky) continue;
-        const min = subject.minAttendance ?? settings.minAttendance;
+        const min = thresholds.min;
         push({
           key: `risk:${subject.id}:${summary.present}/${summary.conducted}`,
           type: 'attendance_risk',

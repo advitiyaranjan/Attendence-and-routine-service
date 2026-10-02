@@ -21,7 +21,7 @@ import {
 import { db } from '../db';
 import { computeAttendance, loadSettings, occurrencesBetween } from '../queries';
 
-export const REF = { class: 'c', task: 't', event: 'e', revision: 'r', exam: 'x', assignment: 'a', subject: 's', reminder: 'm' } as const;
+export const REF = { class: 'c', task: 't', event: 'e', revision: 'r', exam: 'x', assignment: 'a', subject: 's', reminder: 'm', basket: 'b' } as const;
 
 export async function buildCommandContext(): Promise<Record<string, unknown>> {
   const settings = await loadSettings();
@@ -30,6 +30,8 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
   const now = localMomentNow();
   const live = <T extends { deletedAt: string | null }>(rows: T[]) => rows.filter((r) => !r.deletedAt);
   const subjects = live(await db.entity('subject').toArray());
+  const baskets = live(await db.entity('basket').toArray()).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const basketName = (id: string | null) => baskets.find((b) => b.id === id)?.name ?? null;
   const subjectName = (id: string | null) => subjects.find((s) => s.id === id)?.name ?? null;
 
   const ctx: Record<string, unknown> = {
@@ -37,7 +39,15 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     collegeHours: `${settings.collegeStart}-${settings.collegeEnd}`,
     dailyStudyTargetMinutes: settings.dailyStudyTargetMinutes,
     ...(settings.studyTimes.length ? { preferredStudyTimes: settings.studyTimes } : {}),
-    subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code, ...(s.compulsory ? { compulsory: true } : {}) })),
+    subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code, ...(s.compulsory ? { compulsory: true } : {}), ...(basketName(s.basketId) ? { basket: basketName(s.basketId) } : {}) })),
+    // Baskets group subjects (College, Coaching, …); their rules override the global settings for their subjects.
+    baskets: baskets.map((b) => ({
+      ref: refOf(REF.basket, b.id),
+      name: b.name,
+      ownHolidays: b.holidays,
+      term: b.termStart || b.termEnd ? { start: b.termStart, end: b.termEnd } : 'global semester',
+      ...(b.minAttendance !== null || b.targetAttendance !== null ? { attendanceRule: { minimum: b.minAttendance, target: b.targetAttendance } } : {}),
+    })),
   };
   if (p.readProfile) {
     const pr = settings.profile;
@@ -59,7 +69,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
       attendanceRule: { minimum: settings.minAttendance, target: settings.targetAttendance, safe: settings.safeAttendance },
       dailyStudyTargetMinutes: settings.dailyStudyTargetMinutes,
       semester: { start: settings.semesterStart, end: settings.semesterEnd },
-      workingDays: settings.workingDays,
+      holidaysForEveryBasket: settings.holidays,
       revisionIntervals: settings.revisionIntervals,
       theme: settings.theme,
       classReminderMinutes: settings.notifications.categories.classes.offsets,
@@ -111,8 +121,9 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     ctx.attendance = {
       overallPercent: att.overall.percent === null ? null : Number(att.overall.percent.toFixed(1)),
       rule: { minimum: settings.minAttendance, target: settings.targetAttendance },
-      bySubject: att.subjects.map(({ subject, summary }) => ({
+      bySubject: att.subjects.map(({ subject, summary, thresholds }) => ({
         subject: subject.name,
+        minimum: thresholds.min,
         present: summary.present,
         conducted: summary.conducted,
         percent: summary.percent === null ? null : Number(summary.percent.toFixed(1)),

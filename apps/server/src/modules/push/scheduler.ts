@@ -70,7 +70,7 @@ export async function loadPlannerData(prisma: PrismaClient, userId: string, toda
   if (!settings) return null;
   const all = (entity: Parameters<typeof storeFor>[0], where?: Record<string, unknown>) => storeFor(entity).findAll(tx, userId, where);
   const since = new Date(Date.parse(`${today}T00:00:00Z`) - 400 * 86_400_000).toISOString().slice(0, 10);
-  const [subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders] = await Promise.all([
+  const [subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders, baskets] = await Promise.all([
     all('subject'),
     all('classSchedule'),
     all('classInstance', { date: { gte: since } }),
@@ -81,8 +81,9 @@ export async function loadPlannerData(prisma: PrismaClient, userId: string, toda
     all('assignment'),
     all('calendarEvent'),
     all('reminder'),
+    all('basket'),
   ]);
-  return { settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders } as unknown as PlannerData;
+  return { settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders, baskets } as unknown as PlannerData;
 }
 
 export interface PushPayload {

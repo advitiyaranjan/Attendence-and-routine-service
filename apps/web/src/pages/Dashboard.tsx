@@ -272,7 +272,7 @@ export function Dashboard() {
               <p className="text-sm text-ink-2">Mark your classes as present or absent and your attendance will show here.</p>
             ) : (
               <ul className="space-y-3">
-                {subjectAttendance.map(({ subject, summary }) => {
+                {subjectAttendance.map(({ subject, summary, thresholds }) => {
                   const warn = summary.risk === 'at_risk' || summary.risk === 'below_min';
                   return (
                     <li key={subject.id}>
@@ -286,7 +286,7 @@ export function Dashboard() {
                           {warn && <AlertTriangle className="size-3.5" style={{ color: riskColor(summary.risk) }} aria-label="At risk" />}
                         </span>
                       </div>
-                      <Meter value={summary.percent} color={riskColor(summary.risk)} marker={subject.minAttendance ?? settings.minAttendance} label={`${subject.name} attendance`} />
+                      <Meter value={summary.percent} color={riskColor(summary.risk)} marker={thresholds.min} label={`${subject.name} attendance`} />
                       {warn && <p className="mt-1 text-xs text-ink-2">{summary.advice}</p>}
                     </li>
                   );

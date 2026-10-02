@@ -29,6 +29,7 @@ import {
   WEEKDAYS,
   type ActionKind,
   type ActionName,
+  type Basket,
   type CalendarEvent,
   type ClassOccurrence,
   type ClassSchedule,
@@ -114,22 +115,32 @@ async function ensureSubject(name: string): Promise<string> {
   return (await create('subject', { name, color: palette[all.length % palette.length]! })).id;
 }
 
+/** Find a basket by exact name (another confirmed card may have just created it), else create it. */
+async function ensureBasket(name: string): Promise<string> {
+  const all = (await db.entity('basket').toArray()).filter((b) => !b.deletedAt);
+  const hit = all.find((b) => b.name.trim().toLowerCase() === name.toLowerCase());
+  return hit ? hit.id : (await create('basket', { name, order: all.length })).id;
+}
+
 interface Env {
   settings: Settings;
   today: string;
   nowMinutes: number;
   subjects: Subject[];
+  baskets: Basket[];
   occurrences(from: string, to: string): Promise<ClassOccurrence[]>;
 }
 
 async function loadEnv(): Promise<Env> {
   const settings = await loadSettings();
   const subjects = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
+  const baskets = (await db.entity('basket').toArray()).filter((b) => !b.deletedAt).sort((a, b) => a.order - b.order);
   return {
     settings,
     today: todayISO(),
     nowMinutes: localMomentNow().minutes,
     subjects,
+    baskets,
     occurrences: (from, to) => occurrencesBetween(from, to, settings),
   };
 }
@@ -966,6 +977,7 @@ const H: Record<ActionName, Handler> = {
     async prepare(params: any, env) {
       const dupe = env.subjects.find((s) => s.name.toLowerCase() === String(params.name).toLowerCase() || (params.code && s.code?.toLowerCase() === String(params.code).toLowerCase()));
       if (dupe) return err(`You already have a subject called "${dupe.name}"${dupe.code ? ` (${dupe.code})` : ''}.`);
+      const basket = params.basket ? findBaskets(params.basket, env.baskets)[0] : undefined;
       return proposal('create_subject', params, {
         title: 'Add subject',
         heading: params.name,
@@ -976,7 +988,9 @@ const H: Record<ActionName, Handler> = {
           `Minimum attendance: ${params.minAttendance ?? env.settings.minAttendance}%${params.minAttendance === null ? ' (your default)' : ''}`,
           ...(params.targetAttendance !== null ? [`Target attendance: ${params.targetAttendance}%`] : []),
           ...(params.compulsory ? ['Compulsory: missed classes and revisions are rescheduled automatically'] : []),
+          ...(params.basket ? [`Basket: ${basket ? `${basket.icon} ${basket.name}` : `${params.basket} (new)`}`] : []),
         ],
+        resolved: { basketId: basket?.id ?? null },
         editable: [
           { path: 'name', label: 'Name', type: 'text' },
           { path: 'code', label: 'Code', type: 'text' },
@@ -995,6 +1009,7 @@ const H: Record<ActionName, Handler> = {
         minAttendance: x.minAttendance,
         targetAttendance: x.targetAttendance,
         compulsory: !!x.compulsory,
+        basketId: (p.resolved.basketId as string | null) ?? (x.basket ? await ensureBasket(x.basket) : null),
         color: await nextSubjectColor(),
       });
       return `✓ Subject "${x.name}" added`;
@@ -1016,11 +1031,27 @@ const H: Record<ActionName, Handler> = {
       diff('Minimum attendance', s.minAttendance ?? env.settings.minAttendance, c.minAttendance, '%');
       diff('Target attendance', s.targetAttendance ?? env.settings.targetAttendance, c.targetAttendance, '%');
       if (c.compulsory !== null && c.compulsory !== undefined && c.compulsory !== s.compulsory) lines.push(`Compulsory: ${s.compulsory ? 'yes' : 'no'} → ${c.compulsory ? 'yes (missed work is rescheduled automatically)' : 'no'}`);
+      const resolved: Record<string, unknown> = { subjectId: s.id };
+      if (c.basket) {
+        const current = env.baskets.find((b) => b.id === s.basketId);
+        let next: Basket | null = null;
+        if (!/^(none|no basket|null)$/i.test(c.basket)) {
+          const r = resolveBasket(env, { name: c.basket }, params, 'update_subject');
+          if (isPrepared(r)) return r;
+          next = r.basket;
+        }
+        if (next?.id !== current?.id) {
+          resolved.basketId = next?.id ?? null;
+          lines.push(`Basket: ${current ? current.name : 'none'} → ${next ? next.name : 'none (global rules)'}`);
+        }
+      }
       if (!lines.length) return err(`"${s.name}" already looks like that — nothing to change.`);
-      return proposal('update_subject', params, { title: 'Update subject', heading: s.name, lines, resolved: { subjectId: s.id } });
+      return proposal('update_subject', params, { title: 'Update subject', heading: s.name, lines, resolved });
     },
     async execute(p) {
-      const patch = Object.fromEntries(Object.entries((p.params as any).changes).filter(([, v]) => v !== null && v !== undefined));
+      const { basket: _basket, ...changes } = (p.params as any).changes;
+      const patch = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== null && v !== undefined));
+      if (p.resolved.basketId !== undefined) patch.basketId = p.resolved.basketId;
       await update('subject', p.resolved.subjectId as string, patch);
       return '✓ Subject updated';
     },
@@ -1189,6 +1220,83 @@ const H: Record<ActionName, Handler> = {
     },
   },
 
+  create_basket: {
+    async prepare(params: any, env) {
+      const dupe = env.baskets.find((b) => b.name.toLowerCase() === String(params.name).toLowerCase());
+      if (dupe) return err(`You already have a basket called "${dupe.name}".`);
+      const warnings: string[] = [];
+      const subjectIds: string[] = [];
+      for (const name of params.subjects as string[]) {
+        const hit = findSubjects(name, env.subjects);
+        if (hit.length === 1) subjectIds.push(hit[0]!.id);
+        else warnings.push(hit.length ? `"${name}" matches several subjects — move it from the Subjects page` : `No subject called "${name}"`);
+      }
+      const moved = env.subjects.filter((s) => subjectIds.includes(s.id)).map((s) => s.name);
+      return proposal('create_basket', params, {
+        title: 'Add basket',
+        heading: `${params.icon ?? '📚'} ${params.name}`,
+        lines: [
+          ...(moved.length ? [`Subjects: ${moved.join(', ')}`] : []),
+          ...basketRuleLines(env, params),
+          ...(params.holidays.length ? [`Own holidays: ${(params.holidays as string[]).join(', ')}`] : []),
+        ],
+        warnings,
+        resolved: { subjectIds },
+        editable: [{ path: 'name', label: 'Name', type: 'text' }],
+      });
+    },
+    async execute(p, env) {
+      const x = p.params as any;
+      const basket = await create('basket', {
+        name: x.name,
+        icon: x.icon ?? '📚',
+        holidays: [...new Set(x.holidays as string[])].sort(),
+        termStart: x.termStart,
+        termEnd: x.termEnd,
+        minAttendance: x.minAttendance,
+        targetAttendance: x.targetAttendance,
+        order: env.baskets.length,
+      });
+      for (const id of p.resolved.subjectIds as string[]) await update('subject', id, { basketId: basket.id });
+      return `✓ Basket "${x.name}" added`;
+    },
+  },
+
+  update_basket: {
+    async prepare(params: any, env) {
+      const r = resolveBasket(env, params.target, params, 'update_basket');
+      if (isPrepared(r)) return r;
+      const b = r.basket;
+      const c = params.changes;
+      const patch: Partial<Basket> = {};
+      const lines: string[] = [];
+      const set = <K extends keyof Basket>(key: K, label: string, value: Basket[K] | null | undefined, fallback: unknown = '—', suffix = '') => {
+        if (value === null || value === undefined || value === b[key]) return;
+        patch[key] = value;
+        lines.push(`${label}: ${b[key] === null ? fallback : `${b[key]}${suffix}`} → ${value}${suffix}`);
+      };
+      set('name', 'Name', c.name);
+      set('icon', 'Icon', c.icon);
+      set('termStart', 'Term starts', c.termStart, `${env.settings.semesterStart ?? '—'} (global)`);
+      set('termEnd', 'Term ends', c.termEnd, `${env.settings.semesterEnd ?? '—'} (global)`);
+      set('minAttendance', 'Minimum attendance', c.minAttendance, `${env.settings.minAttendance}% (global)`, '%');
+      set('targetAttendance', 'Target attendance', c.targetAttendance, `${env.settings.targetAttendance}% (global)`, '%');
+      const added = ((c.addHolidays ?? []) as string[]).filter((d) => !b.holidays.includes(d));
+      const removed = ((c.removeHolidays ?? []) as string[]).filter((d) => b.holidays.includes(d));
+      if (added.length || removed.length) {
+        patch.holidays = [...new Set([...b.holidays.filter((d) => !removed.includes(d)), ...added])].sort();
+        if (added.length) lines.push(`Add holidays: ${added.join(', ')}`);
+        if (removed.length) lines.push(`Remove holidays: ${removed.join(', ')}`);
+      }
+      if (!lines.length) return err(`"${b.name}" already looks like that — nothing to change.`);
+      return proposal('update_basket', params, { title: 'Update basket', heading: `${b.icon} ${b.name}`, lines, resolved: { basketId: b.id, patch } });
+    },
+    async execute(p) {
+      await update('basket', p.resolved.basketId as string, p.resolved.patch as Partial<Basket>);
+      return '✓ Basket updated';
+    },
+  },
+
   update_settings: {
     async prepare(params: any, env) {
       // Hard rule (also enforced in validateIntents and the write path): user-only settings.
@@ -1202,14 +1310,16 @@ const H: Record<ActionName, Handler> = {
         patch[key] = value;
         lines.push(`${label}: ${s[key] === null ? '—' : fmt(s[key])} → ${fmt(value)}`);
       };
-      const days = (v: unknown) => (v as number[]).map((d) => WEEKDAYS[d]!.slice(0, 3)).join(', ');
       set('minAttendance', 'Minimum attendance', c.minAttendance, (v) => `${v}%`);
       set('targetAttendance', 'Target attendance', c.targetAttendance, (v) => `${v}%`);
       set('safeAttendance', 'Safe attendance', c.safeAttendance, (v) => `${v}%`);
       set('dailyStudyTargetMinutes', 'Daily study target', c.dailyStudyTargetMinutes, (v) => `${v} min`);
       set('semesterStart', 'Semester starts', c.semesterStart);
       set('semesterEnd', 'Semester ends', c.semesterEnd);
-      set('workingDays', 'Working days', c.workingDays ? [...new Set(c.workingDays as number[])].sort() : null, days);
+      if (c.addHolidays?.length || c.removeHolidays?.length) {
+        const removed = new Set<string>(c.removeHolidays ?? []);
+        set('holidays', 'Holidays (every basket)', [...new Set([...s.holidays.filter((d) => !removed.has(d)), ...(c.addHolidays ?? [])])].sort(), (v) => (v as string[]).join(', ') || 'none');
+      }
       set('revisionIntervals', 'Revision days', c.revisionIntervals ? [...new Set(c.revisionIntervals as number[])].sort((a, b) => a - b) : null, (v) => (v as number[]).join(', '));
       set('theme', 'Theme', c.theme);
       if (c.sleepStart || c.sleepEnd) set('sleepWindow', 'Sleep time', { start: c.sleepStart ?? s.sleepWindow.start, end: c.sleepEnd ?? s.sleepWindow.end }, (v) => `${(v as Settings['sleepWindow']).start}–${(v as Settings['sleepWindow']).end}`);
@@ -1299,6 +1409,36 @@ async function resolveSubject(
     };
   }
   return { subject: matches[0]! };
+}
+
+export function findBaskets(name: string | null | undefined, baskets: Basket[]): Basket[] {
+  const q = norm(name ?? '');
+  if (!q) return [];
+  const exact = baskets.filter((b) => norm(b.name) === q);
+  return exact.length ? exact : baskets.filter((b) => norm(b.name).includes(q) || q.includes(norm(b.name)));
+}
+
+function resolveBasket(env: Env, target: { ref?: string | null; name?: string | null }, params: Record<string, unknown>, action: ActionName): { basket: Basket } | Prepared {
+  if (target.ref) {
+    const hit = env.baskets.find((b) => refOf(REF.basket, b.id) === target.ref);
+    if (hit) return { basket: hit };
+  }
+  const matches = findBaskets(target.name, env.baskets);
+  if (!matches.length) return err(`You don't have a basket called "${target.name ?? ''}".`);
+  if (matches.length > 1) {
+    return { kind: 'clarify', question: 'Which basket do you mean?', options: matches.map((b) => ({ label: `${b.icon} ${b.name}`, action, params: withRef(params, refOf(REF.basket, b.id)) })) };
+  }
+  return { basket: matches[0]! };
+}
+
+/** Proposal lines for a new basket's own rules (anything unset follows the global settings). */
+function basketRuleLines(env: Env, x: { termStart: string | null; termEnd: string | null; minAttendance: number | null; targetAttendance: number | null }): string[] {
+  const s = env.settings;
+  return [
+    x.termStart || x.termEnd ? `Term: ${x.termStart ?? s.semesterStart ?? '—'} → ${x.termEnd ?? s.semesterEnd ?? '—'}` : 'Term: same as your semester',
+    `Minimum attendance: ${x.minAttendance ?? s.minAttendance}%${x.minAttendance === null ? ' (global)' : ''}`,
+    ...(x.targetAttendance !== null ? [`Target attendance: ${x.targetAttendance}%`] : []),
+  ];
 }
 
 async function resolveSlot(

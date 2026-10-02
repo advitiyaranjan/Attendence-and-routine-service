@@ -4,38 +4,70 @@
  */
 import { countAttendance, summarizeSubject, type SubjectAttendanceSummary, type Thresholds } from './attendance';
 import { addDays, timeToMinutes, minutesToTime, type ISODate } from './dates';
-import type { CalendarEvent, ClassInstance, ClassSchedule, Settings, Subject } from './entities';
-import { remainingClassesBySubject, resolveOccurrences, type CalendarRules, type ClassOccurrence } from './recurrence';
+import type { Basket, CalendarEvent, ClassInstance, ClassSchedule, Settings, Subject } from './entities';
+import { remainingClassesBySubject, resolveOccurrences, rulesForSubject, type CalendarRules, type ClassOccurrence, type DateRules } from './recurrence';
 
-export function rulesFrom(settings: Pick<Settings, 'workingDays' | 'holidays' | 'semesterStart' | 'semesterEnd'>): CalendarRules {
+/** A subject's basket, if it has a live one. */
+export function basketOf(subject: Pick<Subject, 'basketId'> | undefined, baskets: Basket[] = []): Basket | null {
+  if (!subject?.basketId) return null;
+  return baskets.find((b) => b.id === subject.basketId && !b.deletedAt) ?? null;
+}
+
+/** A basket's date rules: its own holidays on top of the global ones, its own term dates if set. */
+export function basketRules(settings: Pick<Settings, 'holidays' | 'semesterStart' | 'semesterEnd'>, basket: Basket): DateRules {
   return {
-    workingDays: settings.workingDays,
+    holidays: [...settings.holidays, ...basket.holidays],
+    semesterStart: basket.termStart ?? settings.semesterStart,
+    semesterEnd: basket.termEnd ?? settings.semesterEnd,
+  };
+}
+
+/** Calendar rules for the timetable: global settings, overridden per subject by its basket. */
+export function rulesFrom(
+  settings: Pick<Settings, 'holidays' | 'semesterStart' | 'semesterEnd'>,
+  subjects: Pick<Subject, 'id' | 'basketId'>[] = [],
+  baskets: Basket[] = [],
+): CalendarRules {
+  const bySubject: Record<string, DateRules> = {};
+  for (const subject of subjects) {
+    const basket = basketOf(subject, baskets);
+    if (basket) bySubject[subject.id] = basketRules(settings, basket);
+  }
+  return {
     holidays: settings.holidays,
     semesterStart: settings.semesterStart,
     semesterEnd: settings.semesterEnd,
+    bySubject,
   };
 }
 
-export function thresholdsFor(settings: Pick<Settings, 'minAttendance' | 'targetAttendance' | 'safeAttendance'>, subject?: Subject): Thresholds {
+/** Attendance thresholds: the subject's own, else its basket's, else the global setting. */
+export function thresholdsFor(settings: Pick<Settings, 'minAttendance' | 'targetAttendance' | 'safeAttendance'>, subject?: Subject, basket?: Basket | null): Thresholds {
+  const target = subject?.targetAttendance ?? basket?.targetAttendance ?? null;
   return {
-    min: subject?.minAttendance ?? settings.minAttendance,
-    target: subject?.targetAttendance ?? settings.targetAttendance,
-    safe: Math.max(settings.safeAttendance, subject?.targetAttendance ?? 0),
+    min: subject?.minAttendance ?? basket?.minAttendance ?? settings.minAttendance,
+    target: target ?? settings.targetAttendance,
+    safe: Math.max(settings.safeAttendance, target ?? 0),
   };
 }
 
-/** Where attendance counting starts: semester start, or the earliest timetable entry. */
-export function trackingStart(settings: Pick<Settings, 'semesterStart'>, schedules: ClassSchedule[], instances: ClassInstance[]): ISODate | null {
-  if (settings.semesterStart) return settings.semesterStart;
-  const candidates = [
-    ...schedules.map((s) => s.validFrom ?? s.createdAt.slice(0, 10)),
-    ...instances.filter((i) => !i.deletedAt).map((i) => i.date),
-  ];
+/** Where attendance counting starts: the earliest term start, or the earliest timetable entry. */
+export function trackingStart(rules: CalendarRules, schedules: ClassSchedule[], instances: ClassInstance[]): ISODate | null {
+  const termStarts = [rules.semesterStart, ...Object.values(rules.bySubject ?? {}).map((r) => r.semesterStart)].filter((d): d is ISODate => !!d);
+  const candidates = rules.semesterStart
+    ? termStarts
+    : [
+        ...termStarts,
+        ...schedules.map((s) => s.validFrom ?? s.createdAt.slice(0, 10)),
+        ...instances.filter((i) => !i.deletedAt).map((i) => i.date),
+      ];
   return candidates.length ? candidates.sort()[0]! : null;
 }
 
 export interface SubjectAttendance {
   subject: Subject;
+  basket: Basket | null;
+  thresholds: Thresholds;
   summary: SubjectAttendanceSummary;
 }
 
@@ -51,13 +83,14 @@ export interface TimetableData {
   subjects: Subject[];
   schedules: ClassSchedule[];
   instances: ClassInstance[];
+  baskets?: Basket[];
 }
 
-export function attendanceOverview({ settings, subjects, schedules, instances }: TimetableData, today: ISODate): AttendanceOverview {
+export function attendanceOverview({ settings, subjects, schedules, instances, baskets = [] }: TimetableData, today: ISODate): AttendanceOverview {
   const active = subjects.filter((s) => !s.deletedAt);
   const liveSchedules = schedules.filter((s) => !s.deletedAt);
-  const rules = rulesFrom(settings);
-  const start = trackingStart(settings, liveSchedules, instances);
+  const rules = rulesFrom(settings, active, baskets);
+  const start = trackingStart(rules, liveSchedules, instances);
   const past = start && start <= today ? resolveOccurrences(liveSchedules, instances, start, today, rules) : [];
   const remaining = remainingClassesBySubject(liveSchedules, instances, addDays(today, 1), rules);
 
@@ -66,14 +99,21 @@ export function attendanceOverview({ settings, subjects, schedules, instances }:
     if (!bySubject.has(o.subjectId)) bySubject.set(o.subjectId, []);
     bySubject.get(o.subjectId)!.push(o);
   }
-  const list: SubjectAttendance[] = active.map((subject) => ({
-    subject,
-    summary: summarizeSubject(
-      countAttendance(bySubject.get(subject.id) ?? [], today),
-      thresholdsFor(settings, subject),
-      remaining ? (remaining.get(subject.id) ?? 0) : null,
-    ),
-  }));
+  const list: SubjectAttendance[] = active.map((subject) => {
+    const basket = basketOf(subject, baskets);
+    const thresholds = thresholdsFor(settings, subject, basket);
+    const hasTermEnd = !!rulesForSubject(rules, subject.id).semesterEnd;
+    return {
+      subject,
+      basket,
+      thresholds,
+      summary: summarizeSubject(
+        countAttendance(bySubject.get(subject.id) ?? [], today),
+        thresholds,
+        remaining && hasTermEnd ? (remaining.get(subject.id) ?? 0) : null,
+      ),
+    };
+  });
   const present = list.reduce((a, s) => a + s.summary.present, 0);
   const conducted = list.reduce((a, s) => a + s.summary.conducted, 0);
   const unmarked = past.filter((o) => (o.status === null || o.status === 'unsure') && active.some((s) => s.id === o.subjectId));

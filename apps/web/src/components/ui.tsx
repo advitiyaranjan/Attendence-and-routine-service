@@ -9,7 +9,8 @@ export const cn = clsx;
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
-  size?: 'sm' | 'md' | 'lg';
+  /** `icon`: no built-in height or padding — give it a `size-*` class (round icon buttons). */
+  size?: 'sm' | 'md' | 'lg' | 'icon';
   loading?: boolean;
   icon?: ReactNode;
 }
@@ -24,7 +25,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       className={cn(
         'inline-flex select-none items-center justify-center gap-1.5 rounded-xl font-medium transition-[background-color,opacity,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
-        size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-12 px-5 text-[15px]' : 'h-10 px-4 text-sm',
+        size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-12 px-5 text-[15px]' : size === 'icon' ? 'shrink-0 p-0' : 'h-10 px-4 text-sm',
         variant === 'primary' && 'bg-accent text-accent-ink shadow-sm hover:opacity-90',
         variant === 'secondary' && 'border border-line bg-surface text-ink shadow-card hover:bg-surface-2',
         variant === 'ghost' && 'text-ink-2 hover:bg-surface-2 hover:text-ink',
@@ -33,7 +34,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {...rest}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : icon}
+      {loading ? <Loader2 className={size === 'icon' ? 'size-5 animate-spin' : 'size-4 animate-spin'} aria-hidden /> : icon}
       {children}
     </button>
   );

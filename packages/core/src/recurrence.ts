@@ -19,11 +19,33 @@ export function instanceIdFor(scheduleId: string, date: ISODate): string {
   return uuidv5(`${scheduleId}@${date}`, INSTANCE_NAMESPACE);
 }
 
-export interface CalendarRules {
-  workingDays?: number[];
+export interface DateRules {
   holidays?: string[];
   semesterStart?: ISODate | null;
   semesterEnd?: ISODate | null;
+}
+
+export interface CalendarRules extends DateRules {
+  /** Rules that replace the global ones for a subject's classes (from the subject's basket). */
+  bySubject?: Record<string, DateRules>;
+}
+
+/** The date rules that govern one subject's classes. */
+export function rulesForSubject(rules: CalendarRules, subjectId: string): DateRules {
+  return rules.bySubject?.[subjectId] ?? rules;
+}
+
+interface CompiledRules {
+  holidays: Set<string>;
+  start: ISODate | null;
+  end: ISODate | null;
+}
+
+function compileRules(rules: CalendarRules): (subjectId: string) => CompiledRules {
+  const compile = (r: DateRules): CompiledRules => ({ holidays: new Set(r.holidays ?? []), start: r.semesterStart ?? null, end: r.semesterEnd ?? null });
+  const base = compile(rules);
+  const bySubject = new Map(Object.entries(rules.bySubject ?? {}).map(([id, r]) => [id, compile(r)]));
+  return (subjectId) => bySubject.get(subjectId) ?? base;
 }
 
 /** A class on a specific date, whether stored or generated. */
@@ -50,15 +72,14 @@ type ScheduleLike = Pick<
   'id' | 'subjectId' | 'weekday' | 'startTime' | 'endTime' | 'room' | 'type' | 'active' | 'validFrom' | 'validUntil' | 'deletedAt'
 >;
 
-function scheduleAppliesOn(s: ScheduleLike, date: ISODate, rules: CalendarRules, holidays: Set<string>): boolean {
+function scheduleAppliesOn(s: ScheduleLike, date: ISODate, rules: CompiledRules): boolean {
   if (!s.active || s.deletedAt) return false;
   if (weekdayOf(date) !== s.weekday) return false;
   if (s.validFrom && date < s.validFrom) return false;
   if (s.validUntil && date > s.validUntil) return false;
-  if (rules.semesterStart && date < rules.semesterStart) return false;
-  if (rules.semesterEnd && date > rules.semesterEnd) return false;
-  if (rules.workingDays && !rules.workingDays.includes(weekdayOf(date))) return false;
-  if (holidays.has(date)) return false;
+  if (rules.start && date < rules.start) return false;
+  if (rules.end && date > rules.end) return false;
+  if (rules.holidays.has(date)) return false;
   return true;
 }
 
@@ -69,12 +90,12 @@ export function generateOccurrences(
   to: ISODate,
   rules: CalendarRules = {},
 ): ClassOccurrence[] {
-  const holidays = new Set(rules.holidays ?? []);
+  const ruleFor = compileRules(rules);
   const out: ClassOccurrence[] = [];
   if (to < from) return out;
   for (const date of eachDay(from, to)) {
     for (const s of schedules) {
-      if (!scheduleAppliesOn(s, date, rules, holidays)) continue;
+      if (!scheduleAppliesOn(s, date, ruleFor(s.subjectId))) continue;
       out.push({
         id: instanceIdFor(s.id, date),
         scheduleId: s.id,
@@ -169,18 +190,27 @@ export function sortOccurrences<T extends { date: string; startTime: string }>(l
   return list.sort((a, b) => (a.date === b.date ? timeToMinutes(a.startTime) - timeToMinutes(b.startTime) : a.date < b.date ? -1 : 1));
 }
 
-/** Count future occurrences per subject from `from` up to semester end (exclusive of past). */
+/**
+ * Count future occurrences per subject from `from` up to each subject's term end
+ * (exclusive of past). Null when no term end is known at all; subjects whose own
+ * term has no end are counted but meaningless — check `rulesForSubject` first.
+ */
 export function remainingClassesBySubject(
   schedules: ScheduleLike[],
   instances: InstanceLike[],
   from: ISODate,
   rules: CalendarRules,
 ): Map<string, number> | null {
-  if (!rules.semesterEnd || rules.semesterEnd < from) return rules.semesterEnd ? new Map() : null;
+  const ends = [rules.semesterEnd, ...Object.values(rules.bySubject ?? {}).map((r) => r.semesterEnd)].filter((d): d is ISODate => !!d);
+  if (ends.length === 0) return null;
+  const lastEnd = ends.sort().at(-1)!;
   const counts = new Map<string, number>();
-  for (const occ of resolveOccurrences(schedules, instances, from, rules.semesterEnd, rules)) {
+  if (lastEnd < from) return counts;
+  for (const occ of resolveOccurrences(schedules, instances, from, lastEnd, rules)) {
     if (occ.status === 'cancelled' || occ.status === 'rescheduled') continue;
     if (occ.status === 'present' || occ.status === 'absent') continue; // already counted as conducted
+    const end = rulesForSubject(rules, occ.subjectId).semesterEnd;
+    if (end && occ.date > end) continue; // an extra class after this subject's term ended
     counts.set(occ.subjectId, (counts.get(occ.subjectId) ?? 0) + 1);
   }
   return counts;
@@ -196,7 +226,8 @@ export function nextOccurrences(
   rules: CalendarRules = {},
   horizonDays = 120,
 ): ClassOccurrence[] {
-  const end = rules.semesterEnd && diffDays(from, rules.semesterEnd) < horizonDays ? rules.semesterEnd : addDays(from, horizonDays);
+  const termEnd = rulesForSubject(rules, subjectId).semesterEnd;
+  const end = termEnd && diffDays(from, termEnd) < horizonDays ? termEnd : addDays(from, horizonDays);
   return resolveOccurrences(schedules, instances, from, end, rules)
     .filter((o) => o.subjectId === subjectId && o.status !== 'cancelled' && o.status !== 'rescheduled')
     .slice(0, count);

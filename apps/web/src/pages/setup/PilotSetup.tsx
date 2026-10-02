@@ -602,8 +602,8 @@ export function PilotSetup() {
             aria-label="Your answer"
             enterKeyHint="send"
           />
-          <Button type="submit" variant="primary" className="size-11 rounded-full p-0" disabled={!canType || !input.trim() || typing} aria-label="Send">
-            <Send className="size-4" />
+          <Button type="submit" variant="primary" size="icon" className="size-11 rounded-full" disabled={!canType || !input.trim() || typing} aria-label="Send">
+            <Send className="size-5" />
           </Button>
         </form>
       </div>

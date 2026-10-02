@@ -31,6 +31,28 @@ const percent = z.number().min(0).max(100);
 
 // ---------------------------------------------------------------------------
 
+/**
+ * A basket groups subjects that share a calendar, e.g. "College" or "Coaching".
+ * Its rules apply to the classes of every subject in it: holidays are added to
+ * the global ones, and term dates / attendance thresholds replace the global
+ * defaults when set. Subjects with no basket follow the global rules only.
+ */
+export const basketSchema = syncMeta.extend({
+  name: z.string().min(1).max(200),
+  icon: z.string().max(10).default('📚'),
+  color: z.string().max(20).default('#6366f1'),
+  /** Dates with no classes for this basket only (on top of the global holidays). */
+  holidays: z.array(isoDate).default([]),
+  /** Term boundaries for this basket; null = the global semester dates. */
+  termStart: isoDate.nullable().default(null),
+  termEnd: isoDate.nullable().default(null),
+  /** Attendance thresholds for this basket's subjects; null = the global setting. */
+  minAttendance: percent.nullable().default(null),
+  targetAttendance: percent.nullable().default(null),
+  order: z.number().int().min(0).default(0),
+});
+export type Basket = z.infer<typeof basketSchema>;
+
 export const subjectSchema = syncMeta.extend({
   name: z.string().min(1).max(200),
   code: optText(50),
@@ -43,6 +65,8 @@ export const subjectSchema = syncMeta.extend({
   active: z.boolean().default(true),
   /** Compulsory: missed classes get a catch-up session and missed revisions/study move to the next free slot. */
   compulsory: z.boolean().default(false),
+  /** The basket whose calendar and attendance rules this subject follows; null = global rules only. */
+  basketId: z.string().nullable().default(null),
 });
 export type Subject = z.infer<typeof subjectSchema>;
 
@@ -412,11 +436,11 @@ export const settingsSchema = syncMeta.extend({
       bio: z.string().max(500).default(''),
     })
     .prefault({}),
-  workingDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5]),
   collegeStart: hhmm.default('09:00'),
   collegeEnd: hhmm.default('17:00'),
   semesterStart: isoDate.nullable().default(null),
   semesterEnd: isoDate.nullable().default(null),
+  /** Holidays for every basket; a basket can add its own on top. */
   holidays: z.array(isoDate).default([]),
   minAttendance: percent.default(75),
   targetAttendance: percent.default(80),
@@ -448,6 +472,7 @@ export type Settings = z.infer<typeof settingsSchema>;
 /** Registry of synchronised entities. Order matters: parents before children. */
 export const ENTITY_SCHEMAS = {
   settings: settingsSchema,
+  basket: basketSchema,
   subject: subjectSchema,
   classSchedule: classScheduleSchema,
   classInstance: classInstanceSchema,

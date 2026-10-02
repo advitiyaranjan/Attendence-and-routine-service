@@ -132,7 +132,7 @@ export default function Analytics() {
       <Card>
         <SectionTitle>Attendance by subject</SectionTitle>
         <div className="space-y-3">
-          {(att?.subjects ?? []).map(({ subject, summary }) => (
+          {(att?.subjects ?? []).map(({ subject, summary, thresholds }) => (
             <div key={subject.id}>
               <div className="mb-1 flex items-center justify-between gap-2 text-sm">
                 <span className="flex min-w-0 items-center gap-2">
@@ -143,7 +143,7 @@ export default function Analytics() {
                   <RiskPill risk={summary.risk} />
                 </span>
               </div>
-              <Meter value={summary.percent} color={riskColor(summary.risk)} marker={subject.minAttendance ?? settings.minAttendance} label={`${subject.name} attendance`} />
+              <Meter value={summary.percent} color={riskColor(summary.risk)} marker={thresholds.min} label={`${subject.name} attendance`} />
             </div>
           ))}
         </div>

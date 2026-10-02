@@ -2,15 +2,16 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, LogOut, RefreshCw, Trash2 } from 'lucide-react';
-import { ENTITY_NAMES, initialRevisions, todayISO, WEEKDAY_SHORT, type Settings } from '@student-os/core';
+import { ENTITY_NAMES, initialRevisions, todayISO, type Settings } from '@student-os/core';
 import { AuthForm } from '../AuthForm';
 import { SyncBadge } from '../Layout';
 import { ServerAddress } from '../ServerAddress';
-import { Button, Chip, Input, Toggle } from '../ui';
+import { Button, Chip, Input, Select, Toggle } from '../ui';
 import { logout } from '../../lib/auth';
 import { db, kvGet } from '../../lib/db';
 import { isNative } from '../../lib/platform';
-import { saveSettings } from '../../lib/repo';
+import { useAll } from '../../lib/hooks';
+import { saveSettings, update } from '../../lib/repo';
 import { STUDY_TIMES } from '../../lib/setup-parse';
 import { toast, useApp } from '../../lib/store';
 import { syncNow } from '../../lib/sync';
@@ -18,7 +19,7 @@ import { ACCENT_NAMES, accentSwatch } from '../../lib/theme';
 import { AIPermissionSettings } from './AIPermissionSettings';
 import { ChangeEmailButton } from './ChangeEmail';
 import { NotificationSettings } from './NotificationSettings';
-import { DayPicker, NumberField, Segmented, SettingBlock, SettingRow, SettingsGroup } from './SettingsUI';
+import { NumberField, Segmented, SettingBlock, SettingRow, SettingsGroup } from './SettingsUI';
 
 const save = (patch: Partial<Settings>) => void saveSettings(patch);
 
@@ -151,10 +152,22 @@ export function ProfileSection({ s }: { s: Settings }) {
 
 export function AcademicSection({ s }: { s: Settings }) {
   const [holiday, setHoliday] = useState('');
+  const [scope, setScope] = useState('all');
+  const baskets = (useAll('basket') ?? []).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const dateInput = 'h-9 rounded-lg border border-line bg-surface-2 px-2 text-sm text-ink focus:border-accent focus:outline-none';
+  const holidays = [
+    ...s.holidays.map((date) => ({ date, basket: null })),
+    ...baskets.flatMap((b) => b.holidays.map((date) => ({ date, basket: b }))),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  function addHoliday() {
+    const basket = baskets.find((b) => b.id === scope);
+    if (basket) void update('basket', basket.id, { holidays: [...new Set([...basket.holidays, holiday])].sort() });
+    else save({ holidays: [...new Set([...s.holidays, holiday])].sort() });
+    setHoliday('');
+  }
   return (
     <div className="space-y-6">
-      <SettingsGroup title="Semester" footer="Attendance is counted from the start date; the end date lets us count classes remaining.">
+      <SettingsGroup title="Semester" footer="Applies to every basket unless a basket sets its own term. Attendance is counted from the start date; the end date lets us count classes remaining.">
         <SettingRow label="Starts">
           <input type="date" aria-label="Semester starts" className={dateInput} value={s.semesterStart ?? ''} onChange={(e) => save({ semesterStart: e.target.value || null })} />
         </SettingRow>
@@ -171,25 +184,41 @@ export function AcademicSection({ s }: { s: Settings }) {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup title="Week">
-        <SettingRow label="Working days" stacked>
-          <DayPicker value={s.workingDays} onChange={(v) => save({ workingDays: v })} labels={WEEKDAY_SHORT} />
-        </SettingRow>
         <SettingRow label="Week starts on">
           <Segmented label="Week starts on" value={s.weekStartsOn} onChange={(v) => save({ weekStartsOn: v })} options={[{ value: 1, label: 'Monday' }, { value: 0, label: 'Sunday' }]} />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Holidays" footer="No classes are generated on these dates.">
-        <SettingRow label="Add a holiday">
-          <div className="flex gap-2">
+      <SettingsGroup title="Holidays" footer="No classes are generated on these dates — for every basket, or just the one you pick (e.g. a coaching break while college runs).">
+        <SettingRow label="Add a holiday" stacked>
+          <div className="flex flex-wrap gap-2">
             <input type="date" aria-label="Holiday date" className={dateInput} value={holiday} onChange={(e) => setHoliday(e.target.value)} />
-            <Button size="sm" variant="secondary" disabled={!holiday} onClick={() => { save({ holidays: [...new Set([...s.holidays, holiday])].sort() }); setHoliday(''); }}>
+            {baskets.length > 0 && (
+              <Select aria-label="Holiday applies to" value={scope} onChange={(e) => setScope(e.target.value)} className="h-9 w-auto">
+                <option value="all">Every basket</option>
+                {baskets.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.icon} {b.name} only
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Button size="sm" variant="secondary" disabled={!holiday} onClick={addHoliday}>
               Add
             </Button>
           </div>
         </SettingRow>
-        {s.holidays.map((h) => (
-          <SettingRow key={h} label={new Date(`${h}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}>
-            <Button size="sm" variant="ghost" aria-label={`Remove holiday ${h}`} onClick={() => save({ holidays: s.holidays.filter((x) => x !== h) })}>
+        {holidays.map(({ date, basket }) => (
+          <SettingRow
+            key={`${basket?.id ?? 'all'}:${date}`}
+            label={new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+            description={basket ? `${basket.icon} ${basket.name} only` : baskets.length ? 'Every basket' : undefined}
+          >
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Remove holiday ${date}${basket ? ` for ${basket.name}` : ''}`}
+              onClick={() => (basket ? void update('basket', basket.id, { holidays: basket.holidays.filter((x) => x !== date) }) : save({ holidays: s.holidays.filter((x) => x !== date) }))}
+            >
               <Trash2 className="size-4" />
             </Button>
           </SettingRow>
@@ -201,7 +230,7 @@ export function AcademicSection({ s }: { s: Settings }) {
 
 export function AttendanceSection({ s }: { s: Settings }) {
   return (
-    <SettingsGroup title="Attendance rules" footer="Defaults for every subject. You can override them per subject on the Subjects page.">
+    <SettingsGroup title="Attendance rules" footer="Defaults for every basket and subject. A basket (Settings → Baskets) or a single subject can set its own.">
       <SettingRow label="Minimum required" description="Below this you're flagged “below minimum”.">
         <NumberField label="Minimum attendance" value={s.minAttendance} min={0} max={100} unit="%" onCommit={(v) => save({ minAttendance: v })} />
       </SettingRow>

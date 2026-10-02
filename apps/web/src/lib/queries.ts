@@ -13,23 +13,27 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 async function loadTimetable() {
-  const [schedules, instances] = await Promise.all([db.entity('classSchedule').toArray(), db.entity('classInstance').toArray()]);
-  return { schedules: live(schedules), instances };
+  const [subjects, baskets, schedules, instances] = await Promise.all([
+    db.entity('subject').toArray(),
+    db.entity('basket').toArray(),
+    db.entity('classSchedule').toArray(),
+    db.entity('classInstance').toArray(),
+  ]);
+  return { subjects, baskets: live(baskets), schedules: live(schedules), instances };
 }
 
 export async function occurrencesBetween(from: ISODate, to: ISODate, settings: Settings): Promise<ClassOccurrence[]> {
-  const { schedules, instances } = await loadTimetable();
-  return resolveOccurrences(schedules, instances, from, to, rulesFrom(settings));
+  const { subjects, baskets, schedules, instances } = await loadTimetable();
+  return resolveOccurrences(schedules, instances, from, to, rulesFrom(settings, subjects, baskets));
 }
 
 export async function computeAttendance(settings: Settings, today: ISODate): Promise<AttendanceOverview> {
-  const [subjects, { schedules, instances }] = await Promise.all([db.entity('subject').toArray(), loadTimetable()]);
-  return attendanceOverview({ settings, subjects, schedules, instances }, today);
+  return attendanceOverview({ settings, ...(await loadTimetable()) }, today);
 }
 
 /** Everything the notification planner needs, straight from IndexedDB. */
 export async function loadPlannerData(): Promise<PlannerData> {
-  const [settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders] = await Promise.all([
+  const [settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders, baskets] = await Promise.all([
     loadSettings(),
     db.entity('subject').toArray(),
     db.entity('classSchedule').toArray(),
@@ -41,6 +45,7 @@ export async function loadPlannerData(): Promise<PlannerData> {
     db.entity('assignment').toArray(),
     db.entity('calendarEvent').toArray(),
     db.entity('reminder').toArray(),
+    db.entity('basket').toArray(),
   ]);
   return {
     settings,
@@ -54,5 +59,6 @@ export async function loadPlannerData(): Promise<PlannerData> {
     assignments: live(assignments),
     events: live(events),
     reminders: live(reminders),
+    baskets: live(baskets),
   };
 }

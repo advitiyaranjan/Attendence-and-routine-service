@@ -81,6 +81,10 @@ class StudentDB extends Dexie {
         notifications: 'id, scheduledAt, key',
       })
       .upgrade((tx) => tx.table('notifications').clear());
+    this.version(3).stores({
+      basket: 'id',
+      subject: 'id, basketId',
+    });
   }
 
   entity<E extends EntityName>(name: E): EntityTables[E] {

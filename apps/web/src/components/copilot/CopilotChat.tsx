@@ -412,7 +412,7 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
 }
 
 export function CopilotChat({ compact = false, initialPrompt }: { compact?: boolean; initialPrompt?: string | null }) {
-  const { messages, busy, load, send, clear } = useCopilot();
+  const { messages, busy, load, send, clear, setOpen } = useCopilot();
   const [input, setInput] = useState('');
   const online = useApp((s) => s.online);
   const aiAvailable = useApp((s) => s.aiAvailable);
@@ -424,6 +424,18 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * The panel covers the page, so close it while opening AI activity. The open
+   * panel owns a history entry: replace that entry (instead of pushing on top
+   * of it) so closing doesn't step back off the new page, and Back from AI
+   * activity returns to the page you were on.
+   */
+  function openActivity() {
+    const panelEntry = (window.history.state as { copilot?: boolean } | null)?.copilot === true;
+    navigate('/ai-activity', { replace: panelEntry });
+    setOpen(false);
+  }
   useEffect(() => {
     // The server may have been fixed or woken up since the app started.
     if (online && aiAvailable !== true) void refreshAiStatus();
@@ -505,7 +517,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           <ShieldCheck className="size-3.5" /> Suggests changes — you confirm everything.
         </p>
         <div className="flex gap-1">
-          <Button size="sm" variant="ghost" title="AI activity" aria-label="AI activity" onClick={() => navigate('/ai-activity')}>
+          <Button size="sm" variant="ghost" title="AI activity" aria-label="AI activity" onClick={openActivity}>
             <History className="size-4" />
           </Button>
           {messages.length > 0 && (
@@ -680,8 +692,8 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
               if (final) submit(t);
             }}
           />
-          <Button type="submit" variant="primary" className="size-9 shrink-0 rounded-full p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
-            <Send className="size-4" />
+          <Button type="submit" variant="primary" size="icon" className="size-10 rounded-full" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
+            {!busy && <Send className="size-5" />}
           </Button>
         </div>
       </form>

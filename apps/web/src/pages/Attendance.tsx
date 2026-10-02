@@ -16,7 +16,7 @@ import {
 } from '@student-os/core';
 import { ClassRow } from '../components/ClassRow';
 import { Card, EmptyState, Field, Input, Meter, PageHeader, RiskPill, riskColor, Select, SectionTitle, Stat, SubjectDot, cn } from '../components/ui';
-import { thresholdsFor, useAttendance, useOccurrences, useSettings, useSubjectMap, useToday, type SubjectAttendance } from '../lib/hooks';
+import { useAttendance, useOccurrences, useSettings, useSubjectMap, useToday, type SubjectAttendance } from '../lib/hooks';
 
 export default function Attendance() {
   const att = useAttendance();
@@ -41,7 +41,7 @@ export default function Attendance() {
     <div className="space-y-6">
       <PageHeader
         title="Attendance"
-        subtitle={`Minimum ${settings.minAttendance}% · target ${settings.targetAttendance}%. Cancelled and rescheduled classes don't count.`}
+        subtitle={`Minimum ${settings.minAttendance}% · target ${settings.targetAttendance}% unless a subject or basket sets its own. Cancelled and rescheduled classes don't count.`}
       />
       <AskAI placeholder="Ask AI about my attendance…" prompts={['How is my attendance?', 'Which subjects are at risk?', 'Can I skip tomorrow?']} />
 
@@ -59,7 +59,7 @@ export default function Attendance() {
             .slice()
             .sort((a, b) => (a.summary.percent ?? 101) - (b.summary.percent ?? 101))
             .map((s) => (
-              <SubjectCard key={s.subject.id} data={s} min={s.subject.minAttendance ?? settings.minAttendance} />
+              <SubjectCard key={s.subject.id} data={s} min={s.thresholds.min} />
             ))}
         </div>
       </section>
@@ -122,7 +122,7 @@ function WhatIf({ subjects }: { subjects: SubjectAttendance[] }) {
   const [target, setTarget] = useState(settings.targetAttendance);
   const s = subjects.find((x) => x.subject.id === subjectId) ?? subjects[0];
   if (!s) return null;
-  const th = thresholdsFor(settings, s.subject);
+  const th = s.thresholds;
   const after = whatIf(s.summary.present, s.summary.conducted, attend, miss);
   const risk = riskLevel(after, th);
   const needed = classesNeededToReach(s.summary.present, s.summary.conducted, target);

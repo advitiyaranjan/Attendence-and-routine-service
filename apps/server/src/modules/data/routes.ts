@@ -14,6 +14,7 @@ export const dataRouter = Router();
 dataRouter.use(requireAuth);
 
 const COLLECTIONS: Record<string, Exclude<EntityName, 'settings'>> = {
+  baskets: 'basket',
   subjects: 'subject',
   classes: 'classSchedule',
   'class-instances': 'classInstance',

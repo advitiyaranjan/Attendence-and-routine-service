@@ -31,6 +31,7 @@ model User {
 
   devices           Device[]
   settings          UserSettings?
+  baskets           Basket[]
   subjects          Subject[]
   classSchedules    ClassSchedule[]
   classInstances    ClassInstance[]
@@ -98,6 +99,30 @@ model EmailOtp {
 // ---------------------------------------------------------------------------
 // Timetable & attendance
 
+/// A group of subjects with its own holidays, term dates and attendance rules (College, Coaching, …).
+model Basket {
+  id               String    @id
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime
+  updatedAt        DateTime
+  deletedAt        DateTime?
+  version          Int       @default(1)
+  deviceId         String
+
+  name             String
+  icon             String    @default("📚")
+  color            String
+  holidays         Json      @default("[]")
+  termStart        String?
+  termEnd          String?
+  minAttendance    Float?
+  targetAttendance Float?
+  order            Int       @default(0)
+
+  @@index([userId, updatedAt])
+}
+
 model Subject {
   id               String    @id
   userId           String
@@ -116,6 +141,8 @@ model Subject {
   minAttendance    Float?
   targetAttendance Float?
   active           Boolean   @default(true)
+  compulsory       Boolean   @default(false)
+  basketId         String?
 
   schedules        ClassSchedule[]
   instances        ClassInstance[]

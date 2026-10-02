@@ -4,7 +4,7 @@
  */
 import 'fake-indexeddb/auto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { instanceIdFor, refOf, validateIntents } from '@student-os/core';
+import { ACTIONS, instanceIdFor, refOf, validateIntents } from '@student-os/core';
 
 vi.useFakeTimers({ toFake: ['Date'] });
 vi.setSystemTime(new Date(2026, 9, 2, 12, 0));
@@ -17,7 +17,7 @@ const { confirmProposal, undoLog } = await import('./lib/copilot/run');
 const { useCopilot } = await import('./lib/copilot/store');
 const { learnTopic } = await import('./lib/actions');
 const { computeDue, recordDelivered, snoozeLocal } = await import('./lib/notify-core');
-const { computeAttendance } = await import('./lib/queries');
+const { computeAttendance, occurrencesBetween } = await import('./lib/queries');
 
 let dbms = '';
 let morning = '';
@@ -299,5 +299,40 @@ describe('Compulsory subjects and sleep time', () => {
     const r = await prepareAction('create_event', { title: 'Late study', type: 'study', date: '2026-10-03', startTime: '23:30', endTime: '23:59', subject: null });
     expect(r).toMatchObject({ kind: 'error' });
     if (r.kind === 'error') expect(r.message).toMatch(/sleep time/);
+  });
+});
+
+describe('Baskets', () => {
+  it("creates a basket whose own holiday removes only its subjects' classes, and undoes it", async () => {
+    const settings = await getSettings();
+    const fridays = async () => (await occurrencesBetween('2026-10-09', '2026-10-09', settings)).filter((o) => o.subjectId === dbms).length;
+    expect(await fridays()).toBe(2);
+
+    const params = ACTIONS.create_basket.schema.parse({ name: 'College', holidays: ['2026-10-09'], minAttendance: 60, subjects: ['DBMS'] });
+    const r = await prepareAction('create_basket', params);
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: expect.arrayContaining(['Subjects: Database Management Systems', 'Minimum attendance: 60%']) } });
+    if (r.kind !== 'proposal') return;
+    const done = await confirmProposal(r.proposal);
+
+    const basket = (await db.entity('basket').toArray()).find((b) => b.name === 'College' && !b.deletedAt)!;
+    expect((await db.entity('subject').get(dbms))?.basketId).toBe(basket.id);
+    expect(await fridays()).toBe(0);
+    const att = await computeAttendance(settings, '2026-10-02');
+    expect(att.subjects.find((x) => x.subject.id === dbms)).toMatchObject({ basket: { name: 'College' }, thresholds: { min: 60 } });
+
+    await undoLog(done.logId!);
+    expect((await db.entity('subject').get(dbms))?.basketId).toBeNull();
+    expect(await fridays()).toBe(2);
+  });
+
+  it('moves a subject into a basket by name', async () => {
+    const coaching = await create('basket', { name: 'Coaching' });
+    const params = ACTIONS.update_subject.schema.parse({ target: { name: 'Operating Systems' }, changes: { basket: 'coaching' } });
+    const r = await prepareAction('update_subject', params);
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: ['Basket: none → Coaching'] } });
+    if (r.kind !== 'proposal') return;
+    await confirmProposal(r.proposal);
+    const os = (await db.entity('subject').toArray()).find((s) => s.name === 'Operating Systems')!;
+    expect(os.basketId).toBe(coaching.id);
   });
 });

@@ -17,8 +17,7 @@ export default function Classes() {
   const [extra, setExtra] = useState(false);
   const upcoming = (useOccurrences(todayISO(), addDays(todayISO(), 30)) ?? []).filter((o) => o.isExtra || o.status === 'cancelled' || o.status === 'rescheduled');
 
-  const days = [...settings.workingDays, ...new Set(schedules.map((s) => s.weekday))]
-    .filter((d, i, a) => a.indexOf(d) === i)
+  const days = [...new Set(schedules.map((s) => s.weekday))]
     .sort((a, b) => ((a - settings.weekStartsOn + 7) % 7) - ((b - settings.weekStartsOn + 7) % 7));
 
   async function endSlot(s: ClassSchedule) {
