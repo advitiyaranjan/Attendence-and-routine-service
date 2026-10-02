@@ -592,8 +592,8 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
       />
       <form
         className={cn(
-          'mt-2 flex flex-col gap-1 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15',
-          dragging && 'border-accent ring-3 ring-accent/15',
+          'mt-2 flex flex-col gap-0.5 rounded-[26px] border border-line bg-surface px-2 pb-2 pt-1 shadow-pop transition-shadow focus-within:shadow-[0_6px_28px_-8px_rgb(0_0_0/0.28)]',
+          dragging && 'border-accent',
         )}
         onSubmit={(e) => {
           e.preventDefault();
@@ -636,13 +636,13 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           placeholder={disabled ? 'AI unavailable right now' : files.length ? 'Add a message (optional)…' : 'Ask AI Pilot anything…'}
           disabled={disabled}
           rows={1}
-          className="max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted outline-none focus:outline-none focus-visible:outline-none disabled:opacity-60 sm:text-sm"
+          className="max-h-40 min-h-11 w-full resize-none border-0 bg-transparent px-3 py-2.5 text-base text-ink placeholder:text-muted outline-none focus:outline-none focus-visible:outline-none disabled:opacity-60 sm:text-sm"
           aria-label="Message AI Pilot"
         />
         <div className="flex items-center gap-1.5" data-keep-focus>
           <button
             type="button"
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3.5 text-sm font-medium text-accent transition-colors hover:border-accent/50 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent/25 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-accent/25 bg-accent/10 px-3.5 text-sm font-medium text-accent transition-colors hover:border-accent/50 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent/25 disabled:pointer-events-none disabled:opacity-50"
             disabled={disabled || busy || preparing || files.length >= MAX_FILES}
             title="Upload photos, PDFs, Word, Excel or text files (up to 4)"
             onClick={() => fileInput.current?.click()}
@@ -658,7 +658,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
               if (final) submit(t);
             }}
           />
-          <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
+          <Button type="submit" variant="primary" className="size-9 shrink-0 rounded-full p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
             <Send className="size-4" />
           </Button>
         </div>
@@ -694,7 +694,7 @@ export function CopilotPanel() {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] md:bg-black/10" onClick={() => setOpen(false)} />
-      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-4 pb-3 pt-3 shadow-pop md:w-[460px]" aria-label="AI Pilot">
+      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-2.5 pb-2 pt-2 shadow-pop md:w-[460px] md:px-4 md:pb-3 md:pt-3" aria-label="AI Pilot">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-semibold">
             <button type="button" onClick={() => setOpen(false)} className="-ml-1.5 inline-flex size-9 items-center justify-center rounded-xl text-ink-2 hover:bg-surface-2 hover:text-ink" aria-label="Go back" title="Go back">

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -141,19 +141,29 @@ function relative(iso: string) {
  */
 function Popover({ open, onClose, title, children, width = 'md:w-96' }: { open: boolean; onClose: () => void; title: string; children: ReactNode; width?: string }) {
   const desktop = useMedia('(min-width: 768px)');
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // Desktop: close on clicks outside the dropdown and its trigger. (A full-screen overlay
+    // can't be used: the header's stacking context would put it above the dropdown.)
+    const onDown = (e: PointerEvent) => {
+      const wrap = panel.current?.parentElement;
+      if (desktop && wrap && !wrap.contains(e.target as Node)) onClose();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [open, onClose, desktop]);
   if (!open) return null;
   const overlay = createPortal(<div className={cn('fixed inset-0 z-40', !desktop && 'bg-black/35 backdrop-blur-[2px]')} onClick={onClose} />, document.body);
   if (desktop) {
     return (
       <>
-        {overlay}
-        <div role="dialog" aria-label={title} className={cn('absolute right-0 top-full z-50 mt-2 animate-rise overflow-hidden rounded-2xl border border-line bg-surface shadow-pop', width)}>
+        <div ref={panel} role="dialog" aria-label={title} className={cn('absolute right-0 top-full z-50 mt-2 animate-rise overflow-hidden rounded-2xl border border-line bg-surface shadow-pop', width)}>
           {children}
         </div>
       </>
