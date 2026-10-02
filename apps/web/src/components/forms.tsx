@@ -4,6 +4,8 @@ import {
   addDays,
   formatMinutes,
   initialRevisions,
+  overlapsSleep,
+  sleepLabel,
   todayISO,
   WEEKDAYS,
   type Assignment,
@@ -17,7 +19,7 @@ import { addExtraClass, learnTopic, nextSubjectColor, SUBJECT_COLORS } from '../
 import { useAll, useSettings } from '../lib/hooks';
 import { create, update } from '../lib/repo';
 import { toast } from '../lib/store';
-import { Button, Field, Input, Select, Textarea } from './ui';
+import { Button, Field, Input, Select, Textarea, Toggle } from './ui';
 
 function FormShell({ onSubmit, children, submitLabel, onCancel, disabled }: { onSubmit: () => Promise<void>; children: ReactNode; submitLabel: string; onCancel: () => void; disabled?: boolean }) {
   const [busy, setBusy] = useState(false);
@@ -355,11 +357,13 @@ export function EventForm({ initial, onDone, defaultType = 'study', defaultDate 
   const [endTime, setEndTime] = useState(initial?.endTime ?? '');
   const [subjectId, setSubjectId] = useState<string | null>(initial?.subjectId ?? null);
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const sleep = useSettings().sleepWindow;
+  const asleep = !!startTime && !!endTime && endTime > startTime && overlapsSleep(startTime, endTime, sleep);
   return (
     <FormShell
       submitLabel={initial ? 'Save' : 'Add'}
       onCancel={onDone}
-      disabled={!title.trim() || !date || (!!startTime && !!endTime && endTime <= startTime)}
+      disabled={!title.trim() || !date || (!!startTime && !!endTime && endTime <= startTime) || asleep}
       onSubmit={async () => {
         const data = { title: title.trim(), type, date, startTime: startTime || null, endTime: endTime || null, subjectId, notes: notes || null };
         if (initial) await update('calendarEvent', initial.id, data);
@@ -371,6 +375,11 @@ export function EventForm({ initial, onDone, defaultType = 'study', defaultDate 
       <Field label="Title">
         <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={type === 'study' ? 'e.g. OS revision — scheduling' : ''} />
       </Field>
+      {asleep && (
+        <p className="rounded-xl bg-critical/10 px-3 py-2 text-sm text-critical-ink" role="alert">
+          This time is during your sleep time ({sleepLabel(sleep)}). Pick another time, or change sleep time in Settings → Study &amp; revision.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Type">
           <Select value={type} onChange={(e) => setType(e.target.value as CalendarEvent['type'])}>
@@ -481,6 +490,7 @@ export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: ()
   const [color, setColor] = useState(initial?.color ?? '');
   const [minAttendance, setMin] = useState(initial?.minAttendance?.toString() ?? '');
   const [targetAttendance, setTarget] = useState(initial?.targetAttendance?.toString() ?? '');
+  const [compulsory, setCompulsory] = useState(initial?.compulsory ?? false);
   return (
     <FormShell
       submitLabel={initial ? 'Save' : 'Add subject'}
@@ -495,6 +505,7 @@ export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: ()
           color: color || (await nextSubjectColor()),
           minAttendance: minAttendance ? Number(minAttendance) : null,
           targetAttendance: targetAttendance ? Number(targetAttendance) : null,
+          compulsory,
         };
         if (initial) await update('subject', initial.id, data);
         else await create('subject', data);
@@ -522,6 +533,12 @@ export function SubjectForm({ initial, onDone }: { initial?: Subject; onDone: ()
           <Input type="number" min={0} max={100} value={targetAttendance} onChange={(e) => setTarget(e.target.value)} />
         </Field>
       </div>
+      <Toggle
+        checked={compulsory}
+        onChange={setCompulsory}
+        label="Compulsory"
+        description="Missed classes get a catch-up session, and missed revisions or study sessions move to your next free time automatically."
+      />
       <Field label="Colour" group>
         <div className="flex gap-2">
           {SUBJECT_COLORS.map((c) => (

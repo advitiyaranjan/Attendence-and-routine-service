@@ -264,3 +264,40 @@ describe('notification runtime', () => {
     expect((await computeDue()).items.some((i) => i.title === 'Call professor')).toBe(false);
   });
 });
+
+describe('Compulsory subjects and sleep time', () => {
+  it('reschedules missed work only for compulsory subjects, outside sleep time', async () => {
+    const { runCatchUp } = await import('./lib/catchup');
+    const { catchUpIdFor } = await import('@student-os/core');
+    const law = (await create('subject', { name: 'Business Law', color: '#111111', compulsory: true } as never)).id;
+    const art = (await create('subject', { name: 'Art Appreciation', color: '#222222' })).id;
+    const missedLaw = await create('classInstance', { scheduleId: null, subjectId: law, date: '2026-10-01', startTime: '09:00', endTime: '10:00', status: 'absent', isExtra: true } as never);
+    await create('classInstance', { scheduleId: null, subjectId: art, date: '2026-10-01', startTime: '11:00', endTime: '12:00', status: 'absent', isExtra: true } as never);
+    const study = await create('calendarEvent', { title: 'Law reading', type: 'study', date: '2026-10-01', startTime: '18:00', endTime: '19:00', subjectId: law } as never);
+    const artStudy = await create('calendarEvent', { title: 'Art reading', type: 'study', date: '2026-10-01', startTime: '18:00', endTime: '19:00', subjectId: art } as never);
+    const rev = await create('revisionSchedule', { topicId: 't', subjectId: law, stage: 1, dueDate: '2026-09-30' } as never);
+    const artRev = await create('revisionSchedule', { topicId: 't2', subjectId: art, stage: 1, dueDate: '2026-09-30' } as never);
+
+    expect(await runCatchUp()).toBe(3);
+    const sleep = (await getSettings()).sleepWindow;
+    const { overlapsSleep } = await import('@student-os/core');
+
+    const catchUp = await db.entity('calendarEvent').get(catchUpIdFor(missedLaw.id));
+    expect(catchUp).toMatchObject({ title: 'Catch up: Business Law', type: 'study', subjectId: law });
+    expect(catchUp!.date >= '2026-10-02' && !overlapsSleep(catchUp!.startTime!, catchUp!.endTime!, sleep)).toBe(true);
+    const moved = await db.entity('calendarEvent').get(study.id);
+    expect(moved!.date >= '2026-10-02' && !overlapsSleep(moved!.startTime!, moved!.endTime!, sleep)).toBe(true);
+    expect((await db.entity('revisionSchedule').get(rev.id))!.dueDate >= '2026-10-02').toBe(true);
+    // Non-compulsory subjects are left alone.
+    expect((await db.entity('calendarEvent').get(artStudy.id))!.date).toBe('2026-10-01');
+    expect((await db.entity('revisionSchedule').get(artRev.id))!.dueDate).toBe('2026-09-30');
+    // Idempotent: a second run moves nothing new (the catch-up isn't created twice).
+    expect(await runCatchUp()).toBe(0);
+  });
+
+  it('AI Pilot refuses to schedule during sleep time', async () => {
+    const r = await prepareAction('create_event', { title: 'Late study', type: 'study', date: '2026-10-03', startTime: '23:30', endTime: '23:59', subject: null });
+    expect(r).toMatchObject({ kind: 'error' });
+    if (r.kind === 'error') expect(r.message).toMatch(/sleep time/);
+  });
+});

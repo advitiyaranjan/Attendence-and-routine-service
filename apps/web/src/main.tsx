@@ -5,6 +5,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { initAuth } from './lib/auth';
 import { runMigrations } from './lib/migrations';
+import { startCatchUp } from './lib/catchup';
 import { initKeyboard } from './lib/keyboard';
 import { initNative } from './lib/native';
 import { performNotificationAction, startNotificationScheduler, syncTimezone } from './lib/notifications';
@@ -19,6 +20,7 @@ initKeyboard();
 startSyncEngine();
 void initAuth();
 startNotificationScheduler();
+startCatchUp();
 void syncTimezone();
 void initNative({
   onAction: (action, payload) => performNotificationAction(action, payload as never),

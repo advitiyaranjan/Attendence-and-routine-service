@@ -219,8 +219,17 @@ export function StudySection({ s }: { s: Settings }) {
   const preview = initialRevisions(todayISO(), s.revisionIntervals)
     .map((r) => new Date(`${r.dueDate}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))
     .join(' · ');
+  const timeInput = 'h-9 rounded-lg border border-line bg-surface-2 px-2 text-sm text-ink focus:border-accent focus:outline-none';
   return (
     <div className="space-y-6">
+      <SettingsGroup title="Sleep time" footer="Nothing is scheduled while you sleep: AI Pilot, automatic catch-up sessions and the calendar all avoid this time.">
+        <SettingRow label="Bedtime">
+          <input type="time" aria-label="Bedtime" className={timeInput} value={s.sleepWindow.start} onChange={(e) => e.target.value && save({ sleepWindow: { ...s.sleepWindow, start: e.target.value } })} />
+        </SettingRow>
+        <SettingRow label="Wake up">
+          <input type="time" aria-label="Wake up" className={timeInput} value={s.sleepWindow.end} onChange={(e) => e.target.value && save({ sleepWindow: { ...s.sleepWindow, end: e.target.value } })} />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Study">
         <SettingRow label="Daily study target" description="Self-study time you aim for each day.">
           <NumberField label="Daily study target in minutes" value={s.dailyStudyTargetMinutes} min={0} max={1440} step={15} unit="min" onCommit={(v) => save({ dailyStudyTargetMinutes: v })} />

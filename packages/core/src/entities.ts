@@ -41,6 +41,8 @@ export const subjectSchema = syncMeta.extend({
   minAttendance: percent.nullable().default(null),
   targetAttendance: percent.nullable().default(null),
   active: z.boolean().default(true),
+  /** Compulsory: missed classes get a catch-up session and missed revisions/study move to the next free slot. */
+  compulsory: z.boolean().default(false),
 });
 export type Subject = z.infer<typeof subjectSchema>;
 
@@ -425,6 +427,8 @@ export const settingsSchema = syncMeta.extend({
   studyTimes: z.array(z.enum(['morning', 'afternoon', 'evening', 'night'])).max(4).default([]),
   /** Exact preferred study hours (e.g. 19:00–23:00), if the student set them. */
   studyWindow: z.object({ start: hhmm, end: hhmm }).nullable().default(null),
+  /** Nothing is scheduled during sleep time. */
+  sleepWindow: z.object({ start: hhmm, end: hhmm }).default({ start: '23:00', end: '07:00' }),
   /**
    * How hard AI Pilot works (model tier and context size). USER ONLY:
    * listed in AI_PROTECTED_SETTINGS, so AI Pilot can never change it.

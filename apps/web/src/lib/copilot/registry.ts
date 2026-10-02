@@ -37,6 +37,8 @@ import {
   type Settings,
   type Subject,
   type Task,
+  overlapsSleep,
+  sleepLabel,
 } from '@student-os/core';
 import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, rescheduleClass } from '../actions';
 import { flashcards as genFlashcards } from '../ai';
@@ -206,6 +208,12 @@ function titleMatches<T extends { title: string }>(query: string | null | undefi
 
 function withRef(params: Record<string, unknown>, ref: string): Record<string, unknown> {
   return { ...params, target: { ...(params.target as object), ref } };
+}
+
+/** Nothing may be scheduled during the student's sleep time. */
+function sleepConflict(env: Env, start: string, end: string): string | null {
+  const sleep = env.settings.sleepWindow;
+  return overlapsSleep(start, end, sleep) ? `That's during your sleep time (${sleepLabel(sleep)}). Pick a time outside it, or change sleep time in Settings → Study & revision.` : null;
 }
 
 async function conflictsAt(env: Env, date: string, start: string, end: string, excludeIds: string[] = []): Promise<string[]> {
@@ -586,6 +594,8 @@ const H: Record<ActionName, Handler> = {
   create_event: {
     async prepare(params: any, env) {
       if (params.startTime >= params.endTime) return err('The session must end after it starts.');
+      const asleep = sleepConflict(env, params.startTime, params.endTime);
+      if (asleep) return err(asleep);
       const warnings = await conflictsAt(env, params.date, params.startTime, params.endTime);
       const subjectId = subjectLine(env, params.subject, warnings);
       return proposal('create_event', params, {
@@ -615,7 +625,7 @@ const H: Record<ActionName, Handler> = {
     async prepare(params: any, env) {
       const items: ProposalItem[] = [];
       for (const [i, e] of (params.events as any[]).entries()) {
-        const clash = e.startTime < e.endTime ? (await conflictsAt(env, e.date, e.startTime, e.endTime))[0] : 'Invalid time range';
+        const clash = e.startTime < e.endTime ? (sleepConflict(env, e.startTime, e.endTime) ? `During sleep time (${sleepLabel(env.settings.sleepWindow)})` : (await conflictsAt(env, e.date, e.startTime, e.endTime))[0]) : 'Invalid time range';
         items.push({ key: String(i), label: `${e.date === env.today ? '' : `${dayLabel(e.date, env.today)} · `}${range(e.startTime, e.endTime)} — ${e.title}`, selected: !clash, warning: clash });
       }
       return proposal('create_events', params, {
@@ -652,6 +662,8 @@ const H: Record<ActionName, Handler> = {
       // Keep the duration when only the start moves.
       if (c.startTime && !c.endTime && e.startTime && e.endTime) end = minutesToTime(timeToMinutes(c.startTime) + timeToMinutes(e.endTime) - timeToMinutes(e.startTime));
       if (start && end && start >= end) return err('The new end time must be after the start time.');
+      const asleep = start && end ? sleepConflict(env, start, end) : null;
+      if (asleep) return err(asleep);
       const warnings = start && end ? await conflictsAt(env, date, start, end, [e.id]) : [];
       const lines = [
         ...(c.title && c.title !== e.title ? [`Title: ${e.title} → ${c.title}`] : []),
@@ -963,6 +975,7 @@ const H: Record<ActionName, Handler> = {
           ...(params.credits !== null ? [`Credits: ${params.credits}`] : []),
           `Minimum attendance: ${params.minAttendance ?? env.settings.minAttendance}%${params.minAttendance === null ? ' (your default)' : ''}`,
           ...(params.targetAttendance !== null ? [`Target attendance: ${params.targetAttendance}%`] : []),
+          ...(params.compulsory ? ['Compulsory: missed classes and revisions are rescheduled automatically'] : []),
         ],
         editable: [
           { path: 'name', label: 'Name', type: 'text' },
@@ -981,6 +994,7 @@ const H: Record<ActionName, Handler> = {
         credits: x.credits,
         minAttendance: x.minAttendance,
         targetAttendance: x.targetAttendance,
+        compulsory: !!x.compulsory,
         color: await nextSubjectColor(),
       });
       return `✓ Subject "${x.name}" added`;
@@ -1001,6 +1015,7 @@ const H: Record<ActionName, Handler> = {
       diff('Credits', s.credits, c.credits);
       diff('Minimum attendance', s.minAttendance ?? env.settings.minAttendance, c.minAttendance, '%');
       diff('Target attendance', s.targetAttendance ?? env.settings.targetAttendance, c.targetAttendance, '%');
+      if (c.compulsory !== null && c.compulsory !== undefined && c.compulsory !== s.compulsory) lines.push(`Compulsory: ${s.compulsory ? 'yes' : 'no'} → ${c.compulsory ? 'yes (missed work is rescheduled automatically)' : 'no'}`);
       if (!lines.length) return err(`"${s.name}" already looks like that — nothing to change.`);
       return proposal('update_subject', params, { title: 'Update subject', heading: s.name, lines, resolved: { subjectId: s.id } });
     },
@@ -1197,6 +1212,7 @@ const H: Record<ActionName, Handler> = {
       set('workingDays', 'Working days', c.workingDays ? [...new Set(c.workingDays as number[])].sort() : null, days);
       set('revisionIntervals', 'Revision days', c.revisionIntervals ? [...new Set(c.revisionIntervals as number[])].sort((a, b) => a - b) : null, (v) => (v as number[]).join(', '));
       set('theme', 'Theme', c.theme);
+      if (c.sleepStart || c.sleepEnd) set('sleepWindow', 'Sleep time', { start: c.sleepStart ?? s.sleepWindow.start, end: c.sleepEnd ?? s.sleepWindow.end }, (v) => `${(v as Settings['sleepWindow']).start}–${(v as Settings['sleepWindow']).end}`);
       if (c.classReminderMinutes) {
         const cats = s.notifications.categories;
         const offsets = [...new Set(c.classReminderMinutes as number[])].sort((a, b) => b - a);

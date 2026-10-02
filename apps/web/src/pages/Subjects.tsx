@@ -54,6 +54,7 @@ export default function Subjects() {
                       <SubjectDot color={s.color} />
                       <span className="truncate font-medium">{s.name}</span>
                       {s.code && <span className="text-xs text-muted">{s.code}</span>}
+                      {s.compulsory && <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent">Compulsory</span>}
                     </div>
                     <div className="mt-0.5 text-xs text-ink-2">
                       {[s.faculty, s.credits ? `${s.credits} credits` : null].filter(Boolean).join(' · ') || '—'}

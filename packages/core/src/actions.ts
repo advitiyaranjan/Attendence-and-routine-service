@@ -351,7 +351,7 @@ export const ACTIONS = {
   create_subject: define({
     name: 'create_subject',
     description: 'Add a new subject/course (so classes, exams, attendance and topics can be linked to it).',
-    params: '{ name, code?, faculty?, credits?, minAttendance?: 0-100, targetAttendance?: 0-100 }',
+    params: '{ name, code?, faculty?, credits?, minAttendance?: 0-100, targetAttendance?: 0-100, compulsory?: boolean }',
     schema: z.object({
       name: z.string().trim().min(1).max(200),
       code: optStr(50),
@@ -359,6 +359,7 @@ export const ACTIONS = {
       credits: z.number().min(0).max(50).nullish().transform((v) => v ?? null),
       minAttendance: z.number().min(0).max(100).nullish().transform((v) => v ?? null),
       targetAttendance: z.number().min(0).max(100).nullish().transform((v) => v ?? null),
+      compulsory: z.boolean().nullish().transform((v) => v ?? false),
     }),
     kind: 'create',
     permissions: ['manageSubjects'],
@@ -366,8 +367,8 @@ export const ACTIONS = {
   }),
   update_subject: define({
     name: 'update_subject',
-    description: 'Rename a subject or change its code, faculty, credits or attendance requirement.',
-    params: '{ target: { ref? | name? }, changes: { name?, code?, faculty?, credits?, minAttendance?, targetAttendance? } }',
+    description: 'Rename a subject or change its code, faculty, credits, attendance requirement, or whether it is compulsory (compulsory: missed classes get catch-up sessions and missed revisions/study are rescheduled automatically).',
+    params: '{ target: { ref? | name? }, changes: { name?, code?, faculty?, credits?, minAttendance?, targetAttendance?, compulsory?: boolean } }',
     schema: z.object({
       target: z.object({ ref, name: optStr() }),
       changes: z.object({
@@ -377,6 +378,7 @@ export const ACTIONS = {
         credits: z.number().min(0).max(50).nullish(),
         minAttendance: z.number().min(0).max(100).nullish(),
         targetAttendance: z.number().min(0).max(100).nullish(),
+        compulsory: z.boolean().nullish(),
       }),
     }),
     kind: 'modify',
@@ -462,8 +464,8 @@ export const ACTIONS = {
   }),
   update_settings: define({
     name: 'update_settings',
-    description: 'Change app settings: attendance rule (min/target/safe %), daily study target, semester dates, working days, revision intervals, theme, class reminder minutes.',
-    params: '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, workingDays?: [0-6], revisionIntervals?: number[], theme?: system|light|dark, classReminderMinutes?: number[] } }',
+    description: 'Change app settings: attendance rule (min/target/safe %), daily study target, semester dates, working days, revision intervals, theme, class reminder minutes, sleep time (nothing is scheduled during sleep).',
+    params: '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, workingDays?: [0-6], revisionIntervals?: number[], theme?: system|light|dark, classReminderMinutes?: number[], sleepStart?: HH:MM, sleepEnd?: HH:MM } }',
     schema: z.object({
       changes: z.object({
         minAttendance: z.number().min(0).max(100).nullish(),
@@ -476,6 +478,8 @@ export const ACTIONS = {
         revisionIntervals: z.array(z.number().int().min(1).max(3650)).min(1).max(20).nullish(),
         theme: z.enum(['system', 'light', 'dark']).nullish(),
         classReminderMinutes: z.array(z.number().int().min(0).max(1440)).max(8).nullish(),
+        sleepStart: optTime,
+        sleepEnd: optTime,
       }),
     }),
     kind: 'modify',

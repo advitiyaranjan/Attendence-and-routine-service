@@ -16,6 +16,7 @@ import {
   todayISO,
   WEEKDAYS,
   type ClassOccurrence,
+  awakeHours,
 } from '@student-os/core';
 import { db } from '../db';
 import { computeAttendance, loadSettings, occurrencesBetween } from '../queries';
@@ -36,7 +37,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     collegeHours: `${settings.collegeStart}-${settings.collegeEnd}`,
     dailyStudyTargetMinutes: settings.dailyStudyTargetMinutes,
     ...(settings.studyTimes.length ? { preferredStudyTimes: settings.studyTimes } : {}),
-    subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code })),
+    subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code, ...(s.compulsory ? { compulsory: true } : {}) })),
   };
   if (p.readProfile) {
     const pr = settings.profile;
@@ -62,6 +63,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
       revisionIntervals: settings.revisionIntervals,
       theme: settings.theme,
       classReminderMinutes: settings.notifications.categories.classes.offsets,
+      sleepTime: `${settings.sleepWindow.start}–${settings.sleepWindow.end} (never schedule anything in it)`,
       aiPower: `${settings.aiPower} (user-only: you can't change this)`,
     };
   }
@@ -98,8 +100,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     ctx.freeTime = [today, addDays(today, 1)].map((date) => ({
       date,
       free: freeSlots(date, classes as ClassOccurrence[], events, {
-        dayStart: '07:00',
-        dayEnd: '23:00',
+        ...awakeHours(settings.sleepWindow),
         notBefore: date === today ? now.minutes + 15 : 0,
       }).free.map((f) => `${f.start}-${f.end}`),
     }));

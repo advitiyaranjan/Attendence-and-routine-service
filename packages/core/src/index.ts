@@ -11,3 +11,4 @@ export * from './overview';
 export * from './reminders';
 export * from './notifications';
 export * from './actions';
+export * from './catchup';

@@ -24,7 +24,7 @@ function settings(patch: Record<string, unknown> = {}): Settings {
 function data(patch: Partial<PlannerData> = {}): PlannerData {
   return {
     settings: settings(),
-    subjects: [{ ...meta('os'), name: 'Operating Systems', code: null, faculty: null, credits: null, color: '#000', minAttendance: null, targetAttendance: null, active: true }],
+    subjects: [{ ...meta('os'), name: 'Operating Systems', code: null, faculty: null, credits: null, color: '#000', minAttendance: null, targetAttendance: null, active: true, compulsory: false }],
     schedules: [{ ...meta('s1'), subjectId: 'os', weekday: 5, startTime: '10:00', endTime: '11:00', room: 'B-204', faculty: null, type: 'lecture', active: true, validFrom: null, validUntil: null }],
     instances: [],
     tasks: [],

@@ -37,7 +37,7 @@ const GROUPS: Array<{ title: string; sections: SectionDef[] }> = [
     sections: [
       { id: 'academic', title: 'Semester & schedule', icon: CalendarRange, summary: (s) => [s.semesterEnd ? `Ends ${s.semesterEnd}` : 'Semester dates', days(s.workingDays)].join(' · '), Component: AcademicSection },
       { id: 'attendance', title: 'Attendance', icon: GraduationCap, summary: (s) => `Min ${s.minAttendance}% · target ${s.targetAttendance}%`, Component: AttendanceSection },
-      { id: 'study', title: 'Study & revision', icon: Repeat, summary: (s) => `${Math.round((s.dailyStudyTargetMinutes / 60) * 10) / 10} h a day · revise on day ${s.revisionIntervals.join(', ')}`, Component: StudySection },
+      { id: 'study', title: 'Study & revision', icon: Repeat, summary: (s) => `${Math.round((s.dailyStudyTargetMinutes / 60) * 10) / 10} h a day · sleep ${s.sleepWindow.start}–${s.sleepWindow.end}`, Component: StudySection },
     ],
   },
   {
