@@ -58,7 +58,7 @@ export function Onboarding() {
 
   if (step === -1) {
     return (
-      <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-10">
+      <div className="safe-top safe-bottom mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-10">
         <Brain className="mb-6 size-10 text-accent" />
         <h1 className="text-3xl font-semibold tracking-tight">Your academic life, organised automatically.</h1>
         <p className="mt-3 text-ink-2">
@@ -83,7 +83,7 @@ export function Onboarding() {
   const preview = initialRevisions(todayISO(), draft.revisionIntervals);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="safe-top safe-bottom mx-auto max-w-3xl px-4 py-8">
       <div className="mb-6 flex items-center gap-2">
         <Button variant="ghost" size="sm" onClick={() => setStep(step - 1)} aria-label="Back">
           <ChevronLeft className="size-4" />

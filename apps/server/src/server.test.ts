@@ -39,6 +39,12 @@ describe('sync validation', () => {
     expect(rec).toMatchObject({ id: 'sub-1', name: 'DBMS', color: '#6366f1', active: true });
   });
 
+  it('accepts payloads exactly as the web client sends them (no syncStatus)', () => {
+    const o = op();
+    const { syncStatus: _drop, ...payload } = o.payload as Record<string, unknown>;
+    expect(validateOperation({ ...o, payload }, Date.parse(now))).toMatchObject({ id: 'sub-1', name: 'DBMS' });
+  });
+
   it('forces the entity id from the operation, not the payload', () => {
     const rec = validateOperation(op({ entityId: 'sub-2' }, { id: 'someone-elses-id' }), Date.parse(now));
     expect(rec.id).toBe('sub-2');
@@ -84,6 +90,19 @@ describe('Gemini output validation', () => {
     );
     const result = await client.generateJson(opts);
     expect(result.subjects[0]).toMatchObject({ name: 'OS', day: 1, type: 'lecture' });
+  });
+
+  it('falls back to the next model when one is overloaded', async () => {
+    const client = new GeminiClient('k', 'primary', ['backup']);
+    client.retryDelayMs = 0;
+    const generateContent = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('{"error":{"code":503,"message":"high demand"}}'), { status: 503 }))
+      .mockResolvedValueOnce({ text: '{"subjects":[{"name":"OS","day":"Mon","start_time":"9","end_time":"10"}]}', usageMetadata: {} });
+    (client as unknown as { ai: unknown }).ai = { models: { generateContent } };
+    const out = await client.generateJson(opts);
+    expect(out.subjects).toHaveLength(1);
+    expect(generateContent.mock.calls.map((c) => c[0].model)).toEqual(['primary', 'backup']);
   });
 
   it('reports unavailability when no API key is configured', async () => {

@@ -10,7 +10,16 @@ export const syncRouter = Router();
 const service = new SyncService(prisma);
 
 syncRouter.use(requireAuth);
-syncRouter.use(rateLimit({ windowMs: 60_000, limit: 120, keyGenerator: (req) => req.userId!, standardHeaders: 'draft-7', legacyHeaders: false }));
+syncRouter.use(
+  rateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    keyGenerator: (req) => req.userId!,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: { code: 'rate_limited', message: 'Syncing too often. It will retry shortly.' } },
+  }),
+);
 
 /**
  * POST /api/sync

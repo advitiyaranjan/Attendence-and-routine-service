@@ -13,12 +13,13 @@
  * - Incoming changes never overwrite a record that has unsent local edits;
  *   those edits are pushed next and the server resolves the conflict.
  */
-import type { EntityName, SyncOperation, SyncResponse } from '@student-os/core';
+import { v4 as uuid } from 'uuid';
+import { ENTITY_NAMES, type EntityName, type SyncOperation, type SyncResponse } from '@student-os/core';
 import { api, ApiError } from './api';
 import type { Table } from 'dexie';
 import { db, kvGet, kvSet, type OutboxItem } from './db';
 import { deviceId } from './device';
-import { setLocalWriteListener } from './repo';
+import { emitDataChanged, setLocalWriteListener } from './repo';
 import { useApp } from './store';
 
 const BATCH = 200;
@@ -97,6 +98,7 @@ async function applyResponse(res: SyncResponse, ops: SyncOperation[], seqs: numb
     if (res.cursor) await db.kv.put({ key: CURSOR_KEY, value: res.cursor });
   });
 
+  if (res.changes.length) emitDataChanged();
   if (failed.length) {
     const prev = (await kvGet<typeof failed>('sync.failed')) ?? [];
     await kvSet('sync.failed', [...prev, ...failed].slice(-50));
@@ -196,7 +198,27 @@ export async function resetSyncCursor() {
   await db.kv.delete(CURSOR_KEY);
 }
 
+/**
+ * Records the server rejected earlier are marked "failed" and dropped from the
+ * outbox. Re-queue them on start-up so they retry after a fix or a schema update.
+ */
+export async function requeueFailed(): Promise<number> {
+  let count = 0;
+  const now = new Date().toISOString();
+  for (const name of ENTITY_NAMES) {
+    const failed = await db.table(name).filter((r: { syncStatus?: string }) => r.syncStatus === 'failed').toArray();
+    for (const r of failed as Array<{ id: string; deletedAt: string | null }>) {
+      await db.outbox.add({ operationId: uuid(), entity: name, entityId: r.id, operation: r.deletedAt ? 'delete' : 'upsert', timestamp: now });
+      await db.table(name).update(r.id, { syncStatus: 'pending' });
+      count++;
+    }
+  }
+  if (count) await kvSet('sync.failed', []);
+  return count;
+}
+
 export function startSyncEngine() {
+  void requeueFailed().then((n) => n && scheduleSoon());
   setLocalWriteListener(scheduleSoon);
   void kvGet<string>(LAST_SYNC_KEY).then((v) => v && useApp.getState().setSync({ lastSyncedAt: v }));
   void refreshPending();

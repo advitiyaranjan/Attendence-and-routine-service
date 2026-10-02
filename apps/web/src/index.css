@@ -122,3 +122,15 @@ body {
     animation: none !important;
   }
 }
+
+/* Safe areas (Android app is edge-to-edge; Capacitor also injects --safe-area-inset-*). */
+:root {
+  --sat: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --sab: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+}
+.safe-top {
+  padding-top: var(--sat);
+}
+.safe-bottom {
+  padding-bottom: var(--sab);
+}

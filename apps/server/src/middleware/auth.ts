@@ -15,7 +15,12 @@ declare global {
   }
 }
 
-export function issueSession(res: Response, userId: string): void {
+/**
+ * Starts a session. Browsers use the httpOnly cookie; the Android app (a
+ * different origin, where third-party cookies are unreliable) stores the
+ * returned token and sends it as a Bearer header.
+ */
+export function issueSession(res: Response, userId: string): string {
   const token = jwt.sign({ sub: userId }, env.JWT_SECRET, { expiresIn: `${SESSION_DAYS}d`, algorithm: 'HS256' });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -24,6 +29,7 @@ export function issueSession(res: Response, userId: string): void {
     maxAge: SESSION_DAYS * 86_400_000,
     path: '/',
   });
+  return token;
 }
 
 export function clearSession(res: Response): void {
@@ -32,7 +38,9 @@ export function clearSession(res: Response): void {
 
 /** Attaches req.userId when a valid session cookie is present. */
 export const readSession: RequestHandler = (req, _res, next) => {
-  const token = req.cookies?.[SESSION_COOKIE];
+  const header = req.get('authorization');
+  const bearer = header?.startsWith('Bearer ') ? header.slice(7) : null;
+  const token = bearer ?? req.cookies?.[SESSION_COOKIE];
   if (typeof token === 'string') {
     try {
       const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] });

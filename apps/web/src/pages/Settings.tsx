@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Download, LogOut, RefreshCw } from 'lucide-react';
 import { ENTITY_NAMES, initialRevisions, todayISO, WEEKDAY_SHORT, type Settings as SettingsT } from '@student-os/core';
 import { AuthForm } from '../components/AuthForm';
+import { ServerAddress } from '../components/ServerAddress';
+import { isNative } from '../lib/platform';
 import { SyncBadge } from '../components/Layout';
 import { Button, Card, cn, Field, Input, PageHeader, Select, Toggle } from '../components/ui';
 import { logout } from '../lib/auth';
@@ -55,6 +57,7 @@ export default function Settings() {
       <PageHeader title="Settings" />
 
       <Section title="Account & sync" description="Use the app without an account, or sign in to sync across laptop, phone and tablet.">
+        {isNative && user && <ServerAddress />}
         {user ? (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">

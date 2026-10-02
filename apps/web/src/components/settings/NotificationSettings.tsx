@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { BellRing, Plus, X } from 'lucide-react';
 import { NOTIFICATION_CATEGORY_LABEL, WEEKDAYS, type NotificationCategory, type NotificationSettings as NS, type Settings } from '@student-os/core';
 import { disablePush, enablePush, notificationsSupported, pushState, requestNotificationPermission, sendTestNotification, type PushState } from '../../lib/notifications';
+import { exactAlarmStatus, nativePermission, openExactAlarmSettings, requestNativePermission, reschedule } from '../../lib/native';
+import { isNative } from '../../lib/platform';
 import { saveSettings } from '../../lib/repo';
 import { useApp } from '../../lib/store';
 import { Button, Input, Select, Toggle } from '../ui';
@@ -117,6 +119,7 @@ function CategoryRow({ id, cat, onChange }: { id: NotificationCategory; cat: Cat
 }
 
 const PUSH_TEXT: Record<PushState, string> = {
+  native: 'Reminders are scheduled on this phone itself, so they arrive on time even when the app is closed, the phone is offline, or after a restart.',
   unsupported: "This browser doesn't support push. Reminders still work while the app is open.",
   'disabled-server': "Push isn't configured on the server yet (VAPID keys). Reminders still work while the app is open.",
   'signed-out': 'Sign in to get reminders when the app is closed and on your other devices.',
@@ -125,6 +128,47 @@ const PUSH_TEXT: Record<PushState, string> = {
   off: 'Push is off on this device — reminders only appear while the app is open.',
   on: 'Push is on — reminders arrive even when the app is closed.',
 };
+
+/** Android: notification permission + exact alarm permission (needed for on-time reminders). */
+function NativeStatus() {
+  const [perm, setPerm] = useState<string | null>(null);
+  const [exact, setExact] = useState<string | null>(null);
+  const [count, setCount] = useState<number | null>(null);
+  const refresh = async () => {
+    setPerm(await nativePermission());
+    setExact(await exactAlarmStatus());
+    setCount(await reschedule());
+  };
+  useEffect(() => {
+    void refresh();
+    const onFocus = () => void refresh();
+    document.addEventListener('visibilitychange', onFocus);
+    return () => document.removeEventListener('visibilitychange', onFocus);
+  }, []);
+  return (
+    <div className="mt-2 space-y-2 text-xs">
+      <div>
+        Notifications: <strong>{perm === 'granted' ? 'allowed' : perm === 'denied' ? 'blocked' : 'not allowed yet'}</strong>
+        {perm !== 'granted' && (
+          <Button size="sm" variant="primary" className="ml-2" onClick={async () => { await requestNativePermission(); await refresh(); }}>
+            Allow notifications
+          </Button>
+        )}
+        {perm === 'denied' && <span className="ml-1 text-muted">Enable them in Android Settings → Apps → Student OS → Notifications.</span>}
+      </div>
+      <div>
+        Exact timing (Alarms &amp; reminders): <strong>{exact === 'granted' ? 'allowed' : 'not allowed'}</strong>
+        {exact !== 'granted' && (
+          <Button size="sm" variant="secondary" className="ml-2" onClick={async () => { await openExactAlarmSettings(); await refresh(); }}>
+            Allow exact alarms
+          </Button>
+        )}
+        {exact !== 'granted' && <span className="block text-muted">Without it Android may deliver reminders several minutes late.</span>}
+      </div>
+      {count !== null && perm === 'granted' && <div className="text-muted">{count} reminder(s) scheduled for the next 3 days.</div>}
+    </div>
+  );
+}
 
 export function NotificationSettings({ s }: { s: Settings }) {
   const n = s.notifications;
@@ -144,6 +188,7 @@ export function NotificationSettings({ s }: { s: Settings }) {
           <BellRing className="mt-0.5 size-4 shrink-0 text-accent" />
           <p>{push ? PUSH_TEXT[push] : 'Checking…'}</p>
         </div>
+        {isNative && <NativeStatus />}
         <div className="mt-2 flex flex-wrap gap-2">
           {(push === 'permission-needed' || push === 'off') && (
             <Button
@@ -179,7 +224,7 @@ export function NotificationSettings({ s }: { s: Settings }) {
             </Button>
           )}
         </div>
-        <p className="mt-2 text-xs text-muted">
+        <p className={isNative ? 'hidden' : 'mt-2 text-xs text-muted'}>
           On iPhone/iPad, add Student OS to your Home Screen first (Share → Add to Home Screen) — iOS only delivers web notifications to installed apps.
         </p>
       </div>

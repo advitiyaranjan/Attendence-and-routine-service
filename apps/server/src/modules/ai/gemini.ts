@@ -19,14 +19,53 @@ export interface GenerateOptions<T> {
  * parsed as JSON and validated against a Zod schema; one corrective retry is
  * attempted before giving up.
  */
+function statusOf(err: unknown): number {
+  const s = (err as { status?: number }).status;
+  if (typeof s === 'number') return s;
+  return Number(/"code":s*(d{3})/.exec(String((err as Error)?.message))?.[1] ?? 0);
+}
+
 export class GeminiClient {
   private ai: GoogleGenAI | null;
 
+  private models: string[];
+  /** Pause before the second pass over the model chain. */
+  retryDelayMs = 2500;
+
   constructor(
     apiKey: string | undefined = env.GEMINI_API_KEY,
-    private model: string = env.GEMINI_MODEL,
+    model: string = env.GEMINI_MODEL,
+    fallbacks: string[] = env.GEMINI_FALLBACK_MODELS,
   ) {
     this.ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+    this.models = [model, ...fallbacks.filter((m) => m !== model)];
+  }
+
+  private get model() {
+    return this.models[0]!;
+  }
+
+  /**
+   * Call the primary model, falling back to the next one when a model is
+   * overloaded, rate-limited or unavailable (503 / 429 / 404 / 500).
+   */
+  private async callWithFallback(request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>) {
+    let lastErr: unknown;
+    // Two passes over the chain; Google-side overloads are usually brief.
+    for (const [pass, delay] of [0, this.retryDelayMs].entries()) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      for (const model of this.models) {
+        try {
+          return await this.ai!.models.generateContent({ ...request, model });
+        } catch (err) {
+          lastErr = err;
+          const status = statusOf(err);
+          if (![404, 429, 500, 503].includes(status)) throw err;
+          console.warn(`[ai] ${model} unavailable (${status}), pass ${pass + 1}`);
+        }
+      }
+    }
+    throw lastErr;
   }
 
   get available(): boolean {
@@ -42,8 +81,7 @@ export class GeminiClient {
       let text: string | undefined;
       let usage = { input: 0, output: 0 };
       try {
-        const response = await this.ai.models.generateContent({
-          model: this.model,
+        const response = await this.callWithFallback({
           contents: [{ role: 'user', parts }],
           config: {
             systemInstruction: opts.system,
@@ -57,8 +95,11 @@ export class GeminiClient {
           output: response.usageMetadata?.candidatesTokenCount ?? 0,
         };
       } catch (err) {
-        console.error(`[ai:${opts.feature}] Gemini request failed`, err);
+        console.error(`[ai:${opts.feature}] Gemini request failed`, statusOf(err), String((err as Error).message).slice(0, 200));
         await this.record(opts, usage, false);
+        if ([429, 503].includes(statusOf(err))) {
+          throw new HttpError(503, 'ai_busy', "Gemini is very busy right now (on Google's side). Please try again in a minute.");
+        }
         throw new HttpError(502, 'ai_failed', 'The AI service is temporarily unavailable. Please try again shortly.');
       }
 

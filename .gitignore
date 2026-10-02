@@ -6,3 +6,6 @@ dev-dist
 *.log
 coverage
 apps/server/uploads
+
+# Built Android packages
+release/

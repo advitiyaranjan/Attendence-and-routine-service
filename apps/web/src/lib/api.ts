@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL ?? '';
+import { apiBase, authToken, isNative } from './platform';
 
 /** Errors carry a message that is safe to show to the user. */
 export class ApiError extends Error {
@@ -15,16 +15,22 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; signal?: AbortSignal } = {}): Promise<T> {
+  const base = apiBase();
+  if (isNative && !base) {
+    throw new ApiError('Set your server address in Settings → Account & sync to use online features.', 'no_server', 0);
+  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     throw new ApiError("You're offline. This needs an internet connection.", 'offline', 0);
   }
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    const token = authToken();
+    res = await fetch(`${base}${path}`, {
       method: init.method ?? (init.body || init.form ? 'POST' : 'GET'),
       credentials: 'include',
       headers: {
         'X-Requested-With': 'student-os',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
       body: init.form ?? (init.body !== undefined ? JSON.stringify(init.body) : undefined),

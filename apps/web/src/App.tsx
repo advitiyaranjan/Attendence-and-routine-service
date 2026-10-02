@@ -59,8 +59,13 @@ function useNotificationActions() {
         void performNotificationAction(e.data.action, e.data.payload).then((href) => href && navigate(href));
       }
     };
+    const onNavigate = (e: Event) => navigate((e as CustomEvent<string>).detail);
     navigator.serviceWorker?.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+    window.addEventListener('sos-navigate', onNavigate);
+    return () => {
+      navigator.serviceWorker?.removeEventListener('message', onMessage);
+      window.removeEventListener('sos-navigate', onNavigate);
+    };
   }, [navigate]);
 }
 

@@ -17,6 +17,16 @@ export function setLocalWriteListener(fn: () => void) {
   onLocalWrite = fn;
 }
 
+const dataListeners = new Set<() => void>();
+/** Notified after any local write or applied sync change (e.g. to re-plan reminders). */
+export function addDataListener(fn: () => void): () => void {
+  dataListeners.add(fn);
+  return () => dataListeners.delete(fn);
+}
+export function emitDataChanged() {
+  for (const fn of dataListeners) fn();
+}
+
 let recording: RecordChange[] | null = null;
 
 /**
@@ -58,6 +68,7 @@ async function writeWithOutbox<E extends EntityName>(entity: E, records: EntityM
     }
   });
   onLocalWrite?.();
+  emitDataChanged();
 }
 
 export async function createMany<E extends EntityName>(entity: E, items: NewRecord<E>[]): Promise<EntityMap[E][]> {

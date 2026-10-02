@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../lib/api';
 import { login, loginWithGoogle, register } from '../lib/auth';
+import { isNative } from '../lib/platform';
 import { toast, useApp } from '../lib/store';
+import { ServerAddress } from './ServerAddress';
 import { Button, Field, Input, Tabs } from './ui';
 
 declare global {
@@ -81,6 +83,7 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="space-y-4">
+      {isNative && <ServerAddress />}
       <Tabs
         value={mode}
         onChange={setMode}
@@ -113,7 +116,7 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
           {mode === 'login' ? 'Sign in' : 'Create account'}
         </Button>
       </form>
-      {googleClientId && (
+      {googleClientId && !isNative && (
         <>
           <div className="flex items-center gap-2 text-xs text-muted">
             <div className="h-px flex-1 bg-line" /> or <div className="h-px flex-1 bg-line" />

@@ -130,6 +130,15 @@ export function dayLabel(date: string, today = todayISO()): string {
   return nice;
 }
 
+/** "today", "tomorrow", "yesterday" or "on Fri, 2 Oct" — for use inside sentences. */
+export function dayWord(date: string, today = todayISO()): string {
+  const d = diffDays(today, date);
+  if (d === 0) return 'today';
+  if (d === 1) return 'tomorrow';
+  if (d === -1) return 'yesterday';
+  return `on ${new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}`;
+}
+
 const range = (start: string, end: string | null) => (end ? `${formatTime12(start)} – ${formatTime12(end)}` : formatTime12(start));
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -245,7 +254,7 @@ async function resolveClass(env: Env, target: ClassTarget, params: Record<string
   }
   if (target.time) list = list.filter((o) => o.startTime === target.time || (timeToMinutes(o.startTime) <= timeToMinutes(target.time!) && timeToMinutes(target.time!) < timeToMinutes(o.endTime)));
 
-  const when = target.date ? dayLabel(target.date, env.today).toLowerCase() : 'today';
+  const when = target.date ? dayWord(target.date, env.today) : 'today';
   if (list.length === 0) return err(`I couldn't find ${target.subject ? `a ${target.subject} class` : 'that class'} ${when}${target.time ? ` at ${formatTime12(target.time)}` : ''}. I won't guess.`);
   if (list.length > 1) {
     return {
@@ -299,7 +308,7 @@ async function firstReminder(entityId: string): Promise<string | null> {
   const now = localMomentNow();
   const next = planNotifications(data, now, 0, 60 * 24 * 60).find((n) => n.entityId === entityId);
   if (!next) return null;
-  return `${dayLabel(next.date).replace(/ \(.*\)/, '').toLowerCase()} at ${formatTime12(next.time)}`;
+  return `${dayWord(next.date)} at ${formatTime12(next.time)}`;
 }
 
 const EVENT_TYPE = (t: string): CalendarEvent['type'] => (t === 'personal' || t === 'break' ? 'personal' : t === 'event' ? 'event' : 'study');
@@ -537,7 +546,8 @@ const H: Record<ActionName, Handler> = {
         if (o.status === 'absent') conducted--;
         if (params.status === 'present') (present++, conducted++);
         if (params.status === 'absent') conducted++;
-        preview = `${name}: ${fmtPct(s.percent)} → ${fmtPct(conducted ? (present / conducted) * 100 : null)}`;
+        const after = fmtPct(conducted ? (present / conducted) * 100 : null);
+        preview = s.percent === null ? `${name} attendance: ${after} (first class recorded)` : `${name} attendance: ${fmtPct(s.percent)} → ${after}`;
       }
       return proposal('mark_attendance', params, {
         title: `Mark attendance as ${String(params.status).toUpperCase()}?`,
@@ -551,7 +561,8 @@ const H: Record<ActionName, Handler> = {
       await markAttendance(o, (p.params as any).status);
       const after = await subjectAttendance(env, o.subjectId);
       const name = env.subjects.find((s) => s.id === o.subjectId)?.name ?? 'Class';
-      return `✓ Attendance recorded · ${name}: ${fmtPct(p.resolved.before as number | null)} → ${fmtPct(after?.percent ?? null)}`;
+      const before = p.resolved.before as number | null;
+      return `✓ Attendance recorded · ${name}: ${before === null ? '' : `${fmtPct(before)} → `}${fmtPct(after?.percent ?? null)}`;
     },
   },
 
@@ -715,7 +726,7 @@ const H: Record<ActionName, Handler> = {
     async prepare(params: any, env) {
       const list = await matchingRevisions(env, { subject: params.subject, fromDate: params.fromDate, toDate: params.fromDate });
       if (isPrepared(list)) return list;
-      if (!list.length) return err(`No pending revisions are due ${dayLabel(params.fromDate, env.today).toLowerCase()}${params.subject ? ` for ${params.subject}` : ''}.`);
+      if (!list.length) return err(`No pending revisions are due ${dayWord(params.fromDate, env.today)}${params.subject ? ` for ${params.subject}` : ''}.`);
       return proposal('move_revisions', params, {
         title: `${list.length} revision session${list.length === 1 ? '' : 's'} will be moved`,
         heading: `${dayLabel(params.fromDate, env.today)} → ${dayLabel(params.toDate, env.today)}`,
@@ -883,7 +894,7 @@ const H: Record<ActionName, Handler> = {
     async execute(p, env) {
       const x = p.params as any;
       await create('reminder', { title: x.title, date: x.date, time: x.time, notes: x.notes, recurrence: { ...x.recurrence, until: null }, source: 'ai' });
-      return `✓ Reminder set · I'll notify you ${dayLabel(x.date, env.today).replace(/ \(.*\)/, '').toLowerCase()} at ${formatTime12(x.time)}`;
+      return `✓ Reminder set · I'll notify you ${dayWord(x.date, env.today)} at ${formatTime12(x.time)}`;
     },
   },
 

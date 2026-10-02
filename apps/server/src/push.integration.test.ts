@@ -11,7 +11,8 @@ import type { SyncOperation } from '@student-os/core';
 const url = process.env.TEST_DATABASE_URL;
 if (url) process.env.DATABASE_URL = url;
 
-describe.skipIf(!url)('push scheduler (database)', async () => {
+if (!url) it.skip('push scheduler (database): set TEST_DATABASE_URL to run', () => {});
+else describe('push scheduler (database)', async () => {
   const { prisma } = await import('./db');
   const { SyncService } = await import('./modules/sync/service');
   const { PushScheduler } = await import('./modules/push/scheduler');

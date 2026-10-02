@@ -9,7 +9,12 @@ const schema = z
     /** Comma-separated list of allowed browser origins. */
     CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
     GEMINI_API_KEY: z.string().optional(),
-    GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+    GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
+    /** Tried in order when the primary model is overloaded or unavailable. */
+    GEMINI_FALLBACK_MODELS: z
+      .string()
+      .default('gemini-3.7-flash,gemini-3.5-flash,gemini-3.1-flash-lite')
+      .transform((v) => v.split(',').map((m) => m.trim()).filter(Boolean)),
     GOOGLE_CLIENT_ID: z.string().optional(),
     /** Allow AI features without an account (rate limited per IP). */
     AI_ALLOW_GUEST: z
@@ -36,5 +41,11 @@ const schema = z
   });
 
 export const env = schema.parse(process.env);
-export const allowedOrigins = env.CLIENT_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+/** Browser origins plus the Android app's WebView origins (Capacitor). */
+export const allowedOrigins = [
+  ...env.CLIENT_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
+];
 export const isProd = env.NODE_ENV === 'production';

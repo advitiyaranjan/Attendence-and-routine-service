@@ -19,16 +19,22 @@ import { computeDue, osOptions, recordDelivered, snoozeLocal, type NotifyItem } 
 import { loadSettings } from './queries';
 import { update } from './repo';
 import { toast, useApp } from './store';
+import { isNative } from './platform';
+import { isNativelyScheduled, requestNativePermission, showNativeNow, snoozeNative } from './native';
 
 export function notificationsSupported() {
-  return typeof window !== 'undefined' && 'Notification' in window;
+  return isNative || (typeof window !== 'undefined' && 'Notification' in window);
 }
 
 export function pushSupported() {
-  return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+  return !isNative && typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
 }
 
 export async function requestNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+  if (isNative) {
+    const p = await requestNativePermission();
+    return p === 'prompt' ? 'default' : p;
+  }
   if (!notificationsSupported()) return 'unsupported';
   if (Notification.permission !== 'default') return Notification.permission;
   const result = await Notification.requestPermission();
@@ -66,6 +72,11 @@ function playChime() {
 async function show(item: NotifyItem) {
   const settings = await loadSettings();
   await recordDelivered(item, 'local');
+  if (isNative) {
+    // Android already has an exact alarm for planned items; only show the rest (snoozes, alerts, tests).
+    if (!(await isNativelyScheduled(item.id))) await showNativeNow(item);
+    return;
+  }
   if (settings.notifications.soundType === 'chime' && settings.notifications.sound && document.visibilityState === 'visible') playChime();
   if (!notificationsSupported() || Notification.permission !== 'granted') return;
   try {
@@ -181,6 +192,26 @@ export async function performNotificationAction(action: NotificationActionId, p:
       return p.href ?? '/';
     }
     case 'snooze':
+      if (isNative) {
+        await snoozeNative(
+          {
+            id: p.id ?? uuid(),
+            key: p.key ?? `snooze:${uuid()}`,
+            type: p.type ?? 'reminder',
+            category: p.category ?? 'reminders',
+            title: p.title ?? 'Reminder',
+            body: p.body ?? '',
+            entityType: p.entityType ?? null,
+            entityId: p.entityId ?? null,
+            href: p.href ?? '/',
+            actions: p.actions ?? [],
+            data: { occurrence: p.occurrence, date: p.date },
+          },
+          10,
+        );
+        toast('Snoozed for 10 minutes', 'info');
+        return null;
+      }
       await snoozeLocal({
         id: p.id ?? uuid(),
         key: p.key ?? `snooze:${uuid()}`,
@@ -238,9 +269,10 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-export type PushState = 'unsupported' | 'disabled-server' | 'signed-out' | 'permission-needed' | 'denied' | 'off' | 'on';
+export type PushState = 'native' | 'unsupported' | 'disabled-server' | 'signed-out' | 'permission-needed' | 'denied' | 'off' | 'on';
 
 export async function pushState(): Promise<PushState> {
+  if (isNative) return 'native';
   if (!pushSupported()) return 'unsupported';
   if (!useApp.getState().user) return 'signed-out';
   if (Notification.permission === 'denied') return 'denied';
@@ -319,7 +351,7 @@ export function startNotificationScheduler() {
   setInterval(run, 30_000);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && run());
   window.addEventListener('online', () => void flushDeliveryReports());
-  void registerPeriodicSync();
+  if (!isNative) void registerPeriodicSync();
 }
 
 /** Keep the user's timezone in settings so server-sent reminders arrive at local wall-clock times. */

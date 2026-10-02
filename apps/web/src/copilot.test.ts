@@ -66,7 +66,7 @@ describe('Copilot actions', () => {
 
     const done = await confirmProposal(r.proposal);
     expect(done.status).toBe('confirmed');
-    expect(done.result).toMatch(/Attendance recorded · Database Management Systems: .* → 100%/);
+    expect(done.result).toBe("✓ Attendance recorded · Database Management Systems: 100%");
     const settings = await getSettings();
     expect((await computeAttendance(settings, '2026-10-02')).subjects.find((s) => s.subject.id === dbms)!.summary.present).toBe(1);
 

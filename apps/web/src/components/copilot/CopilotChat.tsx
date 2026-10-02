@@ -7,6 +7,7 @@ import { quiz as genQuiz } from '../../lib/ai';
 import { errorMessage } from '../../lib/api';
 import { db } from '../../lib/db';
 import { useSettings } from '../../lib/hooks';
+import { isNative } from '../../lib/platform';
 import { toast, useApp } from '../../lib/store';
 import { useCopilot, type CopilotMessage } from '../../lib/copilot/store';
 import type { Proposal } from '../../lib/copilot/registry';
@@ -32,10 +33,49 @@ function speechCtor(): (new () => SpeechRec) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** Android app: the system speech recogniser (the WebView has no Web Speech API). */
+function NativeVoiceButton({ onText, disabled }: { onText: (t: string, final: boolean) => void; disabled?: boolean }) {
+  const [listening, setListening] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant={listening ? 'primary' : 'ghost'}
+      disabled={disabled || listening}
+      aria-label="Speak"
+      title="Voice input"
+      onClick={async () => {
+        const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+        try {
+          if (!(await SpeechRecognition.available()).available) {
+            toast('Speech recognition is not available on this phone.', 'error');
+            return;
+          }
+          const perm = await SpeechRecognition.requestPermissions();
+          if (perm.speechRecognition !== 'granted') {
+            toast('Allow microphone access to use voice input.', 'error');
+            return;
+          }
+          setListening(true);
+          const res = await SpeechRecognition.start({ language: navigator.language || 'en-US', maxResults: 1, popup: true, partialResults: false });
+          const text = res.matches?.[0];
+          if (text) onText(text, true);
+        } catch {
+          toast("Couldn't hear that. Try again.", 'error');
+        } finally {
+          setListening(false);
+        }
+      }}
+    >
+      <Mic className="size-4" />
+    </Button>
+  );
+}
+
 function VoiceButton({ onText, disabled }: { onText: (t: string, final: boolean) => void; disabled?: boolean }) {
   const [listening, setListening] = useState(false);
   const rec = useRef<SpeechRec | null>(null);
   const Ctor = speechCtor();
+  if (isNative) return <NativeVoiceButton onText={onText} disabled={disabled} />;
   if (!Ctor) return null;
   return (
     <Button
@@ -296,7 +336,7 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
           {m.clarification.question !== m.content && <p className="font-medium">{m.clarification.question}</p>}
           <div className="flex flex-wrap gap-1.5">
             {m.clarification.options.map((o, i) => (
-              <Button key={i} size="sm" variant="secondary" disabled={m.clarification!.answered} onClick={() => void choose(m.id, o)}>
+              <Button key={i} size="sm" variant="secondary" className="h-auto min-h-8 justify-start py-1.5 text-left" disabled={m.clarification!.answered} onClick={() => void choose(m.id, o)}>
                 {o.label}
               </Button>
             ))}
@@ -455,7 +495,7 @@ export function CopilotPanel() {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30 md:bg-transparent" onClick={() => setOpen(false)} />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-page p-3 shadow-2xl md:w-[440px]" aria-label="Study Copilot">
+      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-page p-3 shadow-2xl md:w-[440px]" aria-label="Study Copilot">
         <div className="mb-1 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-semibold">
             <Sparkles className="size-4 text-accent" /> Study Copilot

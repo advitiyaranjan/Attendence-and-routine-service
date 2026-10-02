@@ -24,7 +24,8 @@ type ValidatedRecord = RecordData & { id: string; updatedAt: string; deviceId: s
 
 export function validateOperation(op: SyncOperation, now = Date.now()): ValidatedRecord {
   const id = op.entity === 'settings' ? SETTINGS_ID : op.entityId;
-  const payload: RecordData = { ...op.payload, id };
+  // syncStatus is device-local bookkeeping: clients don't send it and the server doesn't store it.
+  const payload: RecordData = { ...op.payload, id, syncStatus: 'synced' };
   if (op.operation === 'delete' && !payload.deletedAt) payload.deletedAt = op.timestamp;
 
   const parsed = ENTITY_SCHEMAS[op.entity].safeParse(payload);

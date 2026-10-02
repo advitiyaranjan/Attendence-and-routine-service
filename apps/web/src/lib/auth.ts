@@ -1,5 +1,6 @@
 import { api } from './api';
 import { db, kvGet, kvSet } from './db';
+import { setAuthToken } from './platform';
 import { useApp, type User } from './store';
 import { resetSyncCursor, syncNow } from './sync';
 import { disablePush, ensurePushSubscription, flushDeliveryReports } from './notifications';
@@ -36,17 +37,20 @@ async function setSignedIn(user: User | null) {
 }
 
 export async function register(email: string, password: string, name?: string) {
-  const res = await api<{ user: User }>('/api/auth/register', { body: { email, password, name } });
+  const res = await api<{ user: User; token?: string }>('/api/auth/register', { body: { email, password, name } });
+  setAuthToken(res.token);
   await setSignedIn(res.user);
 }
 
 export async function login(email: string, password: string) {
-  const res = await api<{ user: User }>('/api/auth/login', { body: { email, password } });
+  const res = await api<{ user: User; token?: string }>('/api/auth/login', { body: { email, password } });
+  setAuthToken(res.token);
   await setSignedIn(res.user);
 }
 
 export async function loginWithGoogle(credential: string) {
-  const res = await api<{ user: User }>('/api/auth/google', { body: { credential } });
+  const res = await api<{ user: User; token?: string }>('/api/auth/google', { body: { credential } });
+  setAuthToken(res.token);
   await setSignedIn(res.user);
 }
 
@@ -63,6 +67,7 @@ export async function logout(wipe: boolean) {
   } catch {
     // still sign out locally
   }
+  setAuthToken(null);
   await kvSet(USER_KEY, null);
   await resetSyncCursor();
   if (wipe) {

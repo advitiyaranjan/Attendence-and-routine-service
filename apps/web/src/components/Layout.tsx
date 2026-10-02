@@ -188,7 +188,7 @@ function QuickAdd() {
 
   return (
     <>
-      <div className="fixed bottom-20 right-4 z-30 md:bottom-6 md:right-6">
+      <div className="fixed bottom-[calc(5rem+var(--sab))] right-4 z-30 md:bottom-6 md:right-6">
         {menu && (
           <>
             <div className="fixed inset-0" onClick={() => setMenu(false)} />
@@ -345,7 +345,7 @@ export function Layout() {
 
   return (
     <div className="min-h-dvh md:flex">
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
+      <aside className="safe-top sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line bg-surface md:flex">
         <div className="flex items-center gap-2 px-5 py-4">
           <Brain className="size-5 text-accent" />
           <span className="font-semibold">Student OS</span>
@@ -370,7 +370,7 @@ export function Layout() {
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-2 border-b border-line bg-page/90 px-4 backdrop-blur md:px-6">
+        <header className="safe-top sticky top-0 z-20 flex min-h-12 items-center justify-between gap-2 border-b border-line bg-page/90 px-4 backdrop-blur md:px-6">
           <div className="flex items-center gap-2 md:hidden">
             <Brain className="size-5 text-accent" />
             <span className="font-semibold">Student OS</span>
@@ -397,7 +397,7 @@ export function Layout() {
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden" aria-label="Main">
+      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-line bg-surface safe-bottom md:hidden" aria-label="Main">
         {MOBILE_NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

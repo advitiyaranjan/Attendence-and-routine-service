@@ -18,7 +18,8 @@ function client() {
   };
 }
 const now = (offsetMs = 0) => new Date(Date.now() + offsetMs).toISOString();
-const meta = (id, deviceId, version, updatedAt) => ({ id, createdAt: now(-10_000), updatedAt, deletedAt: null, version, deviceId, syncStatus: 'pending' });
+// Same shape as the web client's payloads: syncStatus is local-only and never sent.
+const meta = (id, deviceId, version, updatedAt) => ({ id, createdAt: now(-10_000), updatedAt, deletedAt: null, version, deviceId });
 const op = (entity, record, baseVersion, deviceId, operation = 'upsert') => ({
   operationId: randomUUID(), entity, entityId: record.id, operation, payload: record, baseVersion, timestamp: now(), deviceId,
 });
@@ -118,7 +119,7 @@ console.log('✓ invalid records rejected; other accounts cannot read or overwri
 // --- AI without a key degrades gracefully
 r = await A('/api/ai/status');
 console.log('  AI status:', r.body);
-r = await A('/api/ai/tasks', { text: 'solve 15 DSA questions', today: '2026-10-02' });
+r = await A('/api/ai/command', { messages: [{ role: 'user', content: 'solve 15 DSA questions' }], today: '2026-10-02' });
 assert.equal(r.status, 503);
 assert.match(r.body.error.message, /not configured/);
 console.log('✓ AI endpoints report unavailable cleanly without a Gemini key');

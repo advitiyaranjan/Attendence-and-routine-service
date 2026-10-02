@@ -10,7 +10,15 @@ import { clearSession, issueSession } from '../../middleware/auth';
 
 export const authRouter = Router();
 
-authRouter.use(rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false }));
+authRouter.use(
+  rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 30,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: { code: 'rate_limited', message: 'Too many sign-in attempts. Please wait a few minutes and try again.' } },
+  }),
+);
 
 // Compared against when the email doesn't exist, so response timing doesn't reveal accounts.
 const DUMMY_HASH = bcrypt.hashSync('timing-equaliser', 12);
@@ -32,8 +40,8 @@ authRouter.post('/register', async (req, res) => {
   const user = await prisma.user.create({
     data: { email, name: name ?? null, passwordHash: await bcrypt.hash(password, 12), lastLoginAt: new Date() },
   });
-  issueSession(res, user.id);
-  res.status(201).json({ user: publicUser(user) });
+  const token = issueSession(res, user.id);
+  res.status(201).json({ user: publicUser(user), token });
 });
 
 authRouter.post('/login', async (req, res) => {
@@ -42,8 +50,8 @@ authRouter.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user || !user.passwordHash || !ok) throw new HttpError(401, 'invalid_credentials', 'Incorrect email or password.');
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-  issueSession(res, user.id);
-  res.json({ user: publicUser(user) });
+  const token = issueSession(res, user.id);
+  res.json({ user: publicUser(user), token });
 });
 
 const googleClient = env.GOOGLE_CLIENT_ID ? new OAuth2Client(env.GOOGLE_CLIENT_ID) : null;
@@ -70,8 +78,8 @@ authRouter.post('/google', async (req, res) => {
       update: { googleId: payload.sub, lastLoginAt: new Date() },
       create: { email, googleId: payload.sub, name: payload.name ?? null, lastLoginAt: new Date() },
     }));
-  issueSession(res, user.id);
-  res.json({ user: publicUser(user) });
+  const token = issueSession(res, user.id);
+  res.json({ user: publicUser(user), token });
 });
 
 authRouter.post('/logout', (_req, res) => {
