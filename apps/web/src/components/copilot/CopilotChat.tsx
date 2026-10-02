@@ -636,7 +636,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           placeholder={disabled ? 'AI unavailable right now' : files.length ? 'Add a message (optional)…' : 'Ask AI Pilot anything…'}
           disabled={disabled}
           rows={1}
-          className="max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 sm:text-sm"
+          className="max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted outline-none focus:outline-none focus-visible:outline-none disabled:opacity-60 sm:text-sm"
           aria-label="Message AI Pilot"
         />
         <div className="flex items-center gap-1.5" data-keep-focus>
