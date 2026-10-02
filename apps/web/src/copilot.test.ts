@@ -56,8 +56,13 @@ describe('Copilot actions', () => {
     await saveSettings({ aiPermissions: { ...perms, manageSubjects: false } });
     expect((await prepareAction('create_class', params)).kind).toBe('error');
     await saveSettings({ aiPermissions: { ...perms, manageSubjects: true } });
-    const r = await prepareAction('create_class', params);
-    expect(r).toMatchObject({ kind: 'proposal', proposal: { warnings: ['Also adds the new subject “Quantum Basket Weaving”'] } });
+    // A new subject needs a basket: AI Pilot asks, offering the existing ones.
+    const ask = await prepareAction('create_class', params);
+    expect(ask).toMatchObject({ kind: 'clarify', question: 'Which basket should “Quantum Basket Weaving” go in?' });
+    if (ask.kind !== 'clarify') return;
+    expect(ask.options.map((o) => o.label)).toEqual(['🏫 College', '➕ A new basket']);
+    const r = await prepareAction('create_class', ask.options[0]!.params!);
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { warnings: ['Also adds the new subject “Quantum Basket Weaving” to 🏫 College'] } });
     if (r.kind !== 'proposal') return;
     const done = await confirmProposal(r.proposal);
     expect((await db.entity('subject').toArray()).some((s) => s.name === 'Quantum Basket Weaving' && !s.deletedAt)).toBe(true);
@@ -135,10 +140,10 @@ describe('Copilot actions', () => {
 
 describe('subjects and settings', () => {
   it('creates, updates and deletes subjects with confirmation and undo', async () => {
-    const add = await prepareAction('create_subject', { name: 'Computer Networks', code: 'CS303', faculty: 'Dr. Mehta', credits: 4, minAttendance: 80, targetAttendance: null });
+    const add = await prepareAction('create_subject', { name: 'Computer Networks', code: 'CS303', faculty: 'Dr. Mehta', credits: 4, minAttendance: 80, targetAttendance: null, basket: 'College' });
     expect(add.kind).toBe('proposal');
     if (add.kind !== 'proposal') return;
-    expect(add.proposal.lines).toEqual(['Code: CS303', 'Faculty: Dr. Mehta', 'Credits: 4', 'Minimum attendance: 80%']);
+    expect(add.proposal.lines).toEqual(['Code: CS303', 'Faculty: Dr. Mehta', 'Credits: 4', 'Minimum attendance: 80%', 'Basket: 🏫 College']);
     expect((await db.entity('subject').toArray()).some((s) => s.name === 'Computer Networks')).toBe(false);
     const done = await confirmProposal(add.proposal);
     expect(done.result).toBe('✓ Subject "Computer Networks" added');
@@ -308,20 +313,22 @@ describe('Baskets', () => {
     const fridays = async () => (await occurrencesBetween('2026-10-09', '2026-10-09', settings)).filter((o) => o.subjectId === dbms).length;
     expect(await fridays()).toBe(2);
 
-    const params = ACTIONS.create_basket.schema.parse({ name: 'College', holidays: ['2026-10-09'], minAttendance: 60, subjects: ['DBMS'] });
+    const college = (await db.entity('subject').get(dbms))!.basketId;
+    expect(college).toBeTruthy(); // subjects always get a basket ("College" by default)
+    const params = ACTIONS.create_basket.schema.parse({ name: 'Morning batch', holidays: ['2026-10-09'], minAttendance: 60, subjects: ['DBMS'] });
     const r = await prepareAction('create_basket', params);
     expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: expect.arrayContaining(['Subjects: Database Management Systems', 'Minimum attendance: 60%']) } });
     if (r.kind !== 'proposal') return;
     const done = await confirmProposal(r.proposal);
 
-    const basket = (await db.entity('basket').toArray()).find((b) => b.name === 'College' && !b.deletedAt)!;
+    const basket = (await db.entity('basket').toArray()).find((b) => b.name === 'Morning batch' && !b.deletedAt)!;
     expect((await db.entity('subject').get(dbms))?.basketId).toBe(basket.id);
     expect(await fridays()).toBe(0);
     const att = await computeAttendance(settings, '2026-10-02');
-    expect(att.subjects.find((x) => x.subject.id === dbms)).toMatchObject({ basket: { name: 'College' }, thresholds: { min: 60 } });
+    expect(att.subjects.find((x) => x.subject.id === dbms)).toMatchObject({ basket: { name: 'Morning batch' }, thresholds: { min: 60 } });
 
     await undoLog(done.logId!);
-    expect((await db.entity('subject').get(dbms))?.basketId).toBeNull();
+    expect((await db.entity('subject').get(dbms))?.basketId).toBe(college);
     expect(await fridays()).toBe(2);
   });
 
@@ -329,10 +336,22 @@ describe('Baskets', () => {
     const coaching = await create('basket', { name: 'Coaching' });
     const params = ACTIONS.update_subject.schema.parse({ target: { name: 'Operating Systems' }, changes: { basket: 'coaching' } });
     const r = await prepareAction('update_subject', params);
-    expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: ['Basket: none → Coaching'] } });
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: ['Basket: College → Coaching'] } });
     if (r.kind !== 'proposal') return;
     await confirmProposal(r.proposal);
     const os = (await db.entity('subject').toArray()).find((s) => s.name === 'Operating Systems')!;
     expect(os.basketId).toBe(coaching.id);
+    // ...but never out of every basket.
+    const none = await prepareAction('update_subject', ACTIONS.update_subject.schema.parse({ target: { name: 'Operating Systems' }, changes: { basket: 'none' } }));
+    expect(none.kind).toBe('error');
+  });
+
+  it('puts subjects without a basket into the default one', async () => {
+    const { assignSubjectsToBaskets } = await import('./lib/repo');
+    const id = (await create('subject', { name: 'Ethics', color: '#333333' })).id;
+    await db.entity('subject').update(id, { basketId: null }); // as if made before baskets existed
+    await assignSubjectsToBaskets();
+    const college = (await db.entity('basket').toArray()).find((b) => b.name === 'College')!;
+    expect((await db.entity('subject').get(id))?.basketId).toBe(college.id);
   });
 });

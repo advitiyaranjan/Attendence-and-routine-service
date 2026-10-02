@@ -20,6 +20,7 @@ import {
 } from '@student-os/core';
 import { db } from '../db';
 import { computeAttendance, loadSettings, occurrencesBetween } from '../queries';
+import { sortBaskets } from '../repo';
 
 export const REF = { class: 'c', task: 't', event: 'e', revision: 'r', exam: 'x', assignment: 'a', subject: 's', reminder: 'm', basket: 'b' } as const;
 
@@ -30,7 +31,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
   const now = localMomentNow();
   const live = <T extends { deletedAt: string | null }>(rows: T[]) => rows.filter((r) => !r.deletedAt);
   const subjects = live(await db.entity('subject').toArray());
-  const baskets = live(await db.entity('basket').toArray()).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const baskets = sortBaskets(live(await db.entity('basket').toArray()));
   const basketName = (id: string | null) => baskets.find((b) => b.id === id)?.name ?? null;
   const subjectName = (id: string | null) => subjects.find((s) => s.id === id)?.name ?? null;
 

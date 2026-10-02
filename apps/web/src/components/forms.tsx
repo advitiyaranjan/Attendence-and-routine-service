@@ -17,7 +17,7 @@ import {
 } from '@student-os/core';
 import { addExtraClass, learnTopic, nextSubjectColor, SUBJECT_COLORS } from '../lib/actions';
 import { useAll, useSettings } from '../lib/hooks';
-import { create, update } from '../lib/repo';
+import { create, sortBaskets, update } from '../lib/repo';
 import { toast } from '../lib/store';
 import { Button, Field, Input, Select, Textarea, Toggle } from './ui';
 
@@ -67,19 +67,15 @@ export function SubjectSelect({ value, onChange, allowNone = true }: { value: st
   );
 }
 
-export function BasketSelect({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
-  const baskets = useAll('basket') ?? [];
+export function BasketSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const baskets = sortBaskets(useAll('basket') ?? []);
   return (
-    <Select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
-      <option value="">No basket (global rules)</option>
-      {baskets
-        .slice()
-        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-        .map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.icon} {b.name}
-          </option>
-        ))}
+    <Select value={value} onChange={(e) => onChange(e.target.value)}>
+      {baskets.map((b) => (
+        <option key={b.id} value={b.id}>
+          {b.icon} {b.name}
+        </option>
+      ))}
     </Select>
   );
 }
@@ -500,8 +496,10 @@ export function ExtraClassForm({ onDone }: { onDone: () => void }) {
 }
 
 export function SubjectForm({ initial, onDone, defaultBasketId = null }: { initial?: Subject; onDone: () => void; defaultBasketId?: string | null }) {
-  const hasBaskets = (useAll('basket') ?? []).length > 0;
-  const [basketId, setBasketId] = useState<string | null>(initial ? initial.basketId : defaultBasketId);
+  const baskets = sortBaskets(useAll('basket') ?? []);
+  const [chosenBasket, setBasketId] = useState<string | null>(initial?.basketId ?? defaultBasketId);
+  // Every subject is in one basket: the chosen one, else the first (repo creates "College" if there are none).
+  const basketId = baskets.some((b) => b.id === chosenBasket) ? chosenBasket : (baskets[0]?.id ?? null);
   const [name, setName] = useState(initial?.name ?? '');
   const [code, setCode] = useState(initial?.code ?? '');
   const [faculty, setFaculty] = useState(initial?.faculty ?? '');
@@ -525,7 +523,7 @@ export function SubjectForm({ initial, onDone, defaultBasketId = null }: { initi
           minAttendance: minAttendance ? Number(minAttendance) : null,
           targetAttendance: targetAttendance ? Number(targetAttendance) : null,
           compulsory,
-          basketId,
+          ...(basketId ? { basketId } : {}),
         };
         if (initial) await update('subject', initial.id, data);
         else await create('subject', data);
@@ -546,11 +544,9 @@ export function SubjectForm({ initial, onDone, defaultBasketId = null }: { initi
         <Field label="Faculty" className="col-span-2">
           <Input value={faculty} onChange={(e) => setFaculty(e.target.value)} />
         </Field>
-        {hasBaskets && (
-          <Field label="Basket" className="col-span-2" hint="Its holidays, term dates and attendance rules apply to this subject.">
-            <BasketSelect value={basketId} onChange={setBasketId} />
-          </Field>
-        )}
+        <Field label="Basket" className="col-span-2" hint="Its holidays, term dates and attendance rules apply to this subject.">
+          {basketId ? <BasketSelect value={basketId} onChange={setBasketId} /> : <Input value="🏫 College (new basket)" disabled />}
+        </Field>
         <Field label="Minimum attendance %" hint="Blank = the basket's or global setting">
           <Input type="number" min={0} max={100} value={minAttendance} onChange={(e) => setMin(e.target.value)} />
         </Field>

@@ -19,7 +19,7 @@ import { api, ApiError } from './api';
 import type { Table } from 'dexie';
 import { db, kvGet, kvSet, type OutboxItem } from './db';
 import { deviceId } from './device';
-import { emitDataChanged, setLocalWriteListener } from './repo';
+import { assignSubjectsToBaskets, emitDataChanged, setLocalWriteListener } from './repo';
 import { useApp } from './store';
 
 const BATCH = 200;
@@ -111,6 +111,7 @@ async function runSync(): Promise<void> {
   if (!app.user) {
     app.setSync({ phase: 'local' });
     useApp.setState({ firstSyncDone: true });
+    await assignSubjectsToBaskets();
     return;
   }
   if (!navigator.onLine) {
@@ -144,6 +145,8 @@ async function runSync(): Promise<void> {
     }
 
     failures = 0;
+    // After a full pull, so a basket made on another device is used instead of a new default one.
+    await assignSubjectsToBaskets();
     const now = new Date().toISOString();
     await kvSet(LAST_SYNC_KEY, now);
     app.setSync({ phase: 'idle', lastSyncedAt: now, conflicts: app.sync.conflicts + conflicts });

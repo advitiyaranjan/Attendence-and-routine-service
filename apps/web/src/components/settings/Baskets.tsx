@@ -9,7 +9,7 @@ import type { Basket, Settings } from '@student-os/core';
 import { SUBJECT_COLORS } from '../../lib/actions';
 import { db } from '../../lib/db';
 import { useAll } from '../../lib/hooks';
-import { create, remove, update } from '../../lib/repo';
+import { create, remove, sortBaskets, update } from '../../lib/repo';
 import { toast } from '../../lib/store';
 import { Button, Chip, Field, Input, Modal } from '../ui';
 import { SettingRow, SettingsGroup } from './SettingsUI';
@@ -37,18 +37,21 @@ export function basketSummary(b: Basket, subjectCount: number): string {
 }
 
 export function BasketsSection({ s }: { s: Settings }) {
-  const baskets = (useAll('basket') ?? []).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const baskets = sortBaskets(useAll('basket') ?? []);
   const subjects = useAll('subject') ?? [];
   const [editing, setEditing] = useState<Basket | { name: string; icon: string } | null>(null);
   const suggestions = SUGGESTIONS.filter((x) => !baskets.some((b) => b.name.toLowerCase() === x.name.toLowerCase()));
 
   async function del(b: Basket) {
     const members = subjects.filter((x) => x.basketId === b.id);
-    if (
-      !confirm(`Delete the ${b.name} basket? ${members.length ? `Its ${members.length} subject${members.length === 1 ? '' : 's'} will be kept and follow your global rules.` : ''}`)
-    )
+    const target = baskets.find((x) => x.id !== b.id);
+    if (members.length && !target) {
+      toast('Every subject needs a basket. Add another basket first, then delete this one.', 'error');
       return;
-    for (const x of members) await update('subject', x.id, { basketId: null });
+    }
+    const moving = members.length ? ` Its ${members.length} subject${members.length === 1 ? '' : 's'} will move to ${target!.name}.` : '';
+    if (!confirm(`Delete the ${b.name} basket?${moving}`)) return;
+    for (const x of members) await update('subject', x.id, { basketId: target!.id });
     await remove('basket', b.id);
     toast(`${b.name} basket deleted`, 'info');
   }
@@ -142,7 +145,6 @@ function BasketForm({ initial, settings, order, onDone }: { initial: Basket | { 
       for (const subject of (await db.entity('subject').toArray()).filter((x) => !x.deletedAt)) {
         const inBasket = subject.basketId === basket.id;
         if (members.has(subject.id) && !inBasket) await update('subject', subject.id, { basketId: basket.id });
-        if (!members.has(subject.id) && inBasket) await update('subject', subject.id, { basketId: null });
       }
       toast(existing ? 'Basket updated' : `${data.name} basket added`, 'success');
       onDone();
@@ -198,16 +200,21 @@ function BasketForm({ initial, settings, order, onDone }: { initial: Basket | { 
       <Field
         label="Subjects in this basket"
         group
-        hint={subjects.length ? 'A subject can be in one basket at a time.' : 'Add subjects first, or pick this basket when you add one.'}
+        hint={
+          subjects.length ? 'Each subject is in exactly one basket. To take a subject out, add it to another basket.' : 'Add subjects first, or pick this basket when you add one.'
+        }
       >
         <div className="flex flex-wrap gap-1.5">
           {subjects.map((x) => {
             const on = members.has(x.id);
+            // Already in this basket: it can only leave by joining another one.
+            const locked = !!existing && x.basketId === existing.id;
             return (
               <Chip
                 key={x.id}
                 selected={on}
                 onClick={() =>
+                  !locked &&
                   setMembers((m) => {
                     const next = new Set(m);
                     if (on) next.delete(x.id);

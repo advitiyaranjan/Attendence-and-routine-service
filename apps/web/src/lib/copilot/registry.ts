@@ -45,7 +45,7 @@ import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, reschedule
 import { flashcards as genFlashcards } from '../ai';
 import { db } from '../db';
 import { computeAttendance, loadPlannerData, loadSettings, occurrencesBetween } from '../queries';
-import { create, createMany, remove, removeMany, update, saveSettings } from '../repo';
+import { create, createMany, remove, removeMany, update, saveSettings, sortBaskets } from '../repo';
 import { REF } from './context';
 
 // ---------------------------------------------------------------------------
@@ -106,13 +106,13 @@ export type Prepared =
 // ---------------------------------------------------------------------------
 // Environment
 
-/** Find a subject by exact name (another confirmed card may have just created it), else create it. */
-async function ensureSubject(name: string): Promise<string> {
+/** Find a subject by exact name (another confirmed card may have just created it), else create it in `basket`. */
+async function ensureSubject(name: string, basket: string | null): Promise<string> {
   const all = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
   const hit = all.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
   if (hit) return hit.id;
   const palette = ['#2a78d6', '#eb6834', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04'];
-  return (await create('subject', { name, color: palette[all.length % palette.length]! })).id;
+  return (await create('subject', { name, color: palette[all.length % palette.length]!, ...(basket ? { basketId: await ensureBasket(basket) } : {}) })).id;
 }
 
 /** Find a basket by exact name (another confirmed card may have just created it), else create it. */
@@ -134,7 +134,7 @@ interface Env {
 async function loadEnv(): Promise<Env> {
   const settings = await loadSettings();
   const subjects = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
-  const baskets = (await db.entity('basket').toArray()).filter((b) => !b.deletedAt).sort((a, b) => a.order - b.order);
+  const baskets = sortBaskets((await db.entity('basket').toArray()).filter((b) => !b.deletedAt));
   return {
     settings,
     today: todayISO(),
@@ -462,7 +462,9 @@ const H: Record<ActionName, Handler> = {
       if (params.startTime >= params.endTime) return err('The class must end after it starts.');
       const subject = found ?? { id: '', name: String(params.subject).trim() };
       const newSubject = found ? undefined : subject.name;
-      const warnings: string[] = newSubject ? [`Also adds the new subject “${newSubject}”`] : [];
+      if (newSubject && !params.basket) return askBasket(env, newSubject, 'create_class', params);
+      const basket = newSubject ? basketLabel(env, params.basket) : null;
+      const warnings: string[] = newSubject ? [`Also adds the new subject “${newSubject}” to ${basket}`] : [];
       if (params.recurring) {
         const weekday = params.weekday ?? weekdayOf(params.date);
         const slots = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.active && s.weekday === weekday && (!s.validUntil || s.validUntil >= env.today));
@@ -499,7 +501,7 @@ const H: Record<ActionName, Handler> = {
     },
     async execute(p, env) {
       const x = p.params as any;
-      if (p.resolved.newSubject) p.resolved.subjectId = await ensureSubject(p.resolved.newSubject as string);
+      if (p.resolved.newSubject) p.resolved.subjectId = await ensureSubject(p.resolved.newSubject as string, x.basket);
       if (x.recurring) {
         await create('classSchedule', { subjectId: p.resolved.subjectId as string, weekday: p.resolved.weekday as number, startTime: x.startTime, endTime: x.endTime, room: x.room, validFrom: env.today });
         return '✓ Weekly class added to your timetable';
@@ -977,7 +979,8 @@ const H: Record<ActionName, Handler> = {
     async prepare(params: any, env) {
       const dupe = env.subjects.find((s) => s.name.toLowerCase() === String(params.name).toLowerCase() || (params.code && s.code?.toLowerCase() === String(params.code).toLowerCase()));
       if (dupe) return err(`You already have a subject called "${dupe.name}"${dupe.code ? ` (${dupe.code})` : ''}.`);
-      const basket = params.basket ? findBaskets(params.basket, env.baskets)[0] : undefined;
+      if (!params.basket) return askBasket(env, params.name, 'create_subject', params);
+      const basket = findBaskets(params.basket, env.baskets)[0];
       return proposal('create_subject', params, {
         title: 'Add subject',
         heading: params.name,
@@ -988,7 +991,7 @@ const H: Record<ActionName, Handler> = {
           `Minimum attendance: ${params.minAttendance ?? env.settings.minAttendance}%${params.minAttendance === null ? ' (your default)' : ''}`,
           ...(params.targetAttendance !== null ? [`Target attendance: ${params.targetAttendance}%`] : []),
           ...(params.compulsory ? ['Compulsory: missed classes and revisions are rescheduled automatically'] : []),
-          ...(params.basket ? [`Basket: ${basket ? `${basket.icon} ${basket.name}` : `${params.basket} (new)`}`] : []),
+          `Basket: ${basketLabel(env, params.basket)}`,
         ],
         resolved: { basketId: basket?.id ?? null },
         editable: [
@@ -1009,7 +1012,7 @@ const H: Record<ActionName, Handler> = {
         minAttendance: x.minAttendance,
         targetAttendance: x.targetAttendance,
         compulsory: !!x.compulsory,
-        basketId: (p.resolved.basketId as string | null) ?? (x.basket ? await ensureBasket(x.basket) : null),
+        basketId: (p.resolved.basketId as string | null) ?? (await ensureBasket(x.basket)),
         color: await nextSubjectColor(),
       });
       return `✓ Subject "${x.name}" added`;
@@ -1034,15 +1037,12 @@ const H: Record<ActionName, Handler> = {
       const resolved: Record<string, unknown> = { subjectId: s.id };
       if (c.basket) {
         const current = env.baskets.find((b) => b.id === s.basketId);
-        let next: Basket | null = null;
-        if (!/^(none|no basket|null)$/i.test(c.basket)) {
-          const r = resolveBasket(env, { name: c.basket }, params, 'update_subject');
-          if (isPrepared(r)) return r;
-          next = r.basket;
-        }
-        if (next?.id !== current?.id) {
-          resolved.basketId = next?.id ?? null;
-          lines.push(`Basket: ${current ? current.name : 'none'} → ${next ? next.name : 'none (global rules)'}`);
+        if (/^(none|no basket|null)$/i.test(c.basket)) return err(`Every subject has to be in a basket. Which basket should "${s.name}" move to?`);
+        const r = resolveBasket(env, { name: c.basket }, params, 'update_subject');
+        if (isPrepared(r)) return r;
+        if (r.basket.id !== current?.id) {
+          resolved.basketId = r.basket.id;
+          lines.push(`Basket: ${current ? current.name : 'none'} → ${r.basket.name}`);
         }
       }
       if (!lines.length) return err(`"${s.name}" already looks like that — nothing to change.`);
@@ -1429,6 +1429,29 @@ function resolveBasket(env: Env, target: { ref?: string | null; name?: string | 
     return { kind: 'clarify', question: 'Which basket do you mean?', options: matches.map((b) => ({ label: `${b.icon} ${b.name}`, action, params: withRef(params, refOf(REF.basket, b.id)) })) };
   }
   return { basket: matches[0]! };
+}
+
+/** Ask which basket a new subject goes in, offering each basket (or common ones when there are none yet). */
+function askBasket(env: Env, subject: string, action: ActionName, params: Record<string, unknown>): Prepared {
+  const names = env.baskets.length ? env.baskets.map((b) => ({ label: `${b.icon} ${b.name}`, name: b.name })) : [
+    { label: '🏫 College', name: 'College' },
+    { label: '📘 Coaching', name: 'Coaching' },
+    { label: '🎒 School', name: 'School' },
+  ];
+  return {
+    kind: 'clarify',
+    question: `Which basket should “${subject}” go in?`,
+    options: [
+      ...names.map((n) => ({ label: n.label, action, params: { ...params, basket: n.name } })),
+      ...(env.baskets.length ? [{ label: '➕ A new basket', send: `Put ${subject} in a new basket` }] : []),
+    ],
+  };
+}
+
+/** "🏫 College", or "Name (new basket)" when it doesn't exist yet. */
+function basketLabel(env: Env, name: string): string {
+  const b = findBaskets(name, env.baskets)[0];
+  return b ? `${b.icon} ${b.name}` : `${name} (new basket)`;
 }
 
 /** Proposal lines for a new basket's own rules (anything unset follows the global settings). */

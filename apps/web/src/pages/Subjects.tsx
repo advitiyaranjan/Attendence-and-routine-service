@@ -5,12 +5,12 @@ import { fmtPct, type Basket, type Subject } from '@student-os/core';
 import { SubjectForm } from '../components/forms';
 import { Button, Card, EmptyState, Meter, Modal, PageHeader, RiskPill, riskColor, SubjectDot } from '../components/ui';
 import { useAll, useAttendance, useSettings, useToday } from '../lib/hooks';
-import { remove } from '../lib/repo';
+import { remove, sortBaskets } from '../lib/repo';
 import { toast } from '../lib/store';
 
 export default function Subjects() {
   const subjects = useAll('subject') ?? [];
-  const baskets = (useAll('basket') ?? []).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const baskets = sortBaskets(useAll('basket') ?? []);
   const att = useAttendance();
   const topics = useAll('topic') ?? [];
   const tasks = useAll('task') ?? [];
@@ -20,7 +20,7 @@ export default function Subjects() {
   const revisions = useAll('revisionSchedule') ?? [];
   const today = useToday();
   const [editing, setEditing] = useState<Subject | { basketId: string | null } | null>(null);
-  // One section per basket (in basket order), then subjects with no basket.
+  // One section per basket, in basket order. Subjects without one are only seen until they're assigned on the next sync.
   const groups: Array<{ basket: Basket | null; subjects: Subject[] }> = [
     ...baskets.map((basket) => ({ basket, subjects: subjects.filter((s) => s.basketId === basket.id) })),
     { basket: null, subjects: subjects.filter((s) => !baskets.some((b) => b.id === s.basketId)) },
@@ -57,10 +57,10 @@ export default function Subjects() {
             <div className="flex items-center justify-between gap-2 px-1">
               <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold">
                 <span aria-hidden>{basket ? basket.icon : '🗂️'}</span>
-                <span className="truncate">{basket ? basket.name : 'No basket'}</span>
+                <span className="truncate">{basket ? basket.name : 'Not in a basket yet'}</span>
                 <span className="font-normal text-muted">
                   {list.length}
-                  {!basket && ' · global rules'}
+                  {!basket && ' · being assigned'}
                 </span>
               </h2>
               {basket && (

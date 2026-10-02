@@ -4,7 +4,7 @@
  * IndexedDB transaction, so no local change can be lost before it syncs.
  */
 import { v4 as uuid } from 'uuid';
-import { AI_PROTECTED_SETTINGS, ENTITY_SCHEMAS, settingsSchema, type EntityMap, type EntityName, type RecordChange, type Settings } from '@student-os/core';
+import { AI_PROTECTED_SETTINGS, ENTITY_SCHEMAS, settingsSchema, type Basket, type EntityMap, type EntityName, type RecordChange, type Settings } from '@student-os/core';
 import { db } from './db';
 import { deviceId } from './device';
 
@@ -97,7 +97,34 @@ async function writeWithOutbox<E extends EntityName>(entity: E, records: EntityM
   emitDataChanged();
 }
 
+/** Baskets in display order. The first one is where subjects go by default. */
+export function sortBaskets<T extends Pick<Basket, 'order' | 'createdAt'>>(baskets: T[]): T[] {
+  return baskets.slice().sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
+}
+
+/** The default basket for a subject: the first basket, or a new "College" basket if there are none. */
+export async function defaultBasketId(): Promise<string> {
+  const first = sortBaskets((await db.entity('basket').toArray()).filter((b) => !b.deletedAt))[0];
+  return first ? first.id : (await create('basket', { name: 'College', icon: '🏫' })).id;
+}
+
+/**
+ * Every subject belongs to exactly one basket. Puts subjects with no basket (from
+ * before baskets existed, or whose basket was deleted elsewhere) into the default one.
+ */
+export async function assignSubjectsToBaskets(): Promise<void> {
+  const live = new Set((await db.entity('basket').toArray()).filter((b) => !b.deletedAt).map((b) => b.id));
+  const orphans = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt && !(s.basketId && live.has(s.basketId)));
+  if (!orphans.length) return;
+  const basketId = await defaultBasketId();
+  for (const s of orphans) await update('subject', s.id, { basketId });
+}
+
 export async function createMany<E extends EntityName>(entity: E, items: NewRecord<E>[]): Promise<EntityMap[E][]> {
+  if (entity === 'subject' && items.some((x) => !(x as NewRecord<'subject'>).basketId)) {
+    const basketId = await defaultBasketId();
+    items = items.map((x) => ((x as NewRecord<'subject'>).basketId ? x : { ...x, basketId }));
+  }
   const now = new Date().toISOString();
   const records = items.map((data) =>
     validate(entity, {

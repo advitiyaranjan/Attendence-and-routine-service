@@ -143,7 +143,7 @@ export const ACTIONS = {
   create_class: define({
     name: 'create_class',
     description: 'Add a class: a one-off/extra class on a date, or a new weekly slot (recurring=true with weekday 0-6, 0=Sunday).',
-    params: '{ subject, recurring: boolean, date?: YYYY-MM-DD, weekday?: 0-6, startTime: HH:MM, endTime: HH:MM, room? }',
+    params: '{ subject, recurring: boolean, date?: YYYY-MM-DD, weekday?: 0-6, startTime: HH:MM, endTime: HH:MM, room?, basket?: only when the subject is new — the basket the student chose for it }',
     schema: z
       .object({
         subject: z.string().trim().min(1).max(200),
@@ -153,6 +153,7 @@ export const ACTIONS = {
         startTime: time,
         endTime: time,
         room: optStr(100),
+        basket: optStr(200),
       })
       .refine((v) => (v.recurring ? v.weekday !== null || v.date !== null : v.date !== null), 'A one-off class needs a date; a weekly class needs a weekday'),
     kind: 'create',
@@ -350,7 +351,7 @@ export const ACTIONS = {
   }),
   create_subject: define({
     name: 'create_subject',
-    description: 'Add a new subject/course (so classes, exams, attendance and topics can be linked to it).',
+    description: 'Add a new subject/course (so classes, exams, attendance and topics can be linked to it). Every subject is in exactly one basket: set basket to the one the student named (a new name creates that basket); if they did not say, leave it out and the app asks them.',
     params: '{ name, code?, faculty?, credits?, minAttendance?: 0-100, targetAttendance?: 0-100, compulsory?: boolean, basket?: basket name }',
     schema: z.object({
       name: z.string().trim().min(1).max(200),
@@ -369,7 +370,7 @@ export const ACTIONS = {
   update_subject: define({
     name: 'update_subject',
     description: 'Rename a subject or change its code, faculty, credits, attendance requirement, basket, or whether it is compulsory (compulsory: missed classes get catch-up sessions and missed revisions/study are rescheduled automatically).',
-    params: '{ target: { ref? | name? }, changes: { name?, code?, faculty?, credits?, minAttendance?, targetAttendance?, compulsory?: boolean, basket?: basket name, or "none" to remove it from its basket } }',
+    params: '{ target: { ref? | name? }, changes: { name?, code?, faculty?, credits?, minAttendance?, targetAttendance?, compulsory?: boolean, basket?: basket name to move it to } }',
     schema: z.object({
       target: z.object({ ref, name: optStr() }),
       changes: z.object({

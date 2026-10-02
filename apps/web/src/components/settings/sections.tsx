@@ -11,7 +11,7 @@ import { logout } from '../../lib/auth';
 import { db, kvGet } from '../../lib/db';
 import { isNative } from '../../lib/platform';
 import { useAll } from '../../lib/hooks';
-import { saveSettings, update } from '../../lib/repo';
+import { saveSettings, sortBaskets, update } from '../../lib/repo';
 import { STUDY_TIMES } from '../../lib/setup-parse';
 import { toast, useApp } from '../../lib/store';
 import { syncNow } from '../../lib/sync';
@@ -153,7 +153,7 @@ export function ProfileSection({ s }: { s: Settings }) {
 export function AcademicSection({ s }: { s: Settings }) {
   const [holiday, setHoliday] = useState('');
   const [scope, setScope] = useState('all');
-  const baskets = (useAll('basket') ?? []).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+  const baskets = sortBaskets(useAll('basket') ?? []);
   const dateInput = 'h-9 rounded-lg border border-line bg-surface-2 px-2 text-sm text-ink focus:border-accent focus:outline-none';
   const holidays = [
     ...s.holidays.map((date) => ({ date, basket: null })),
