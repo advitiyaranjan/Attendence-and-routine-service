@@ -518,55 +518,27 @@ function SideLink({ item, compact = false }: { item: NavItem; compact?: boolean 
   );
 }
 
-const SIDEBAR_PIN_KEY = 'sidebar.pinned';
-const SIDEBAR_IDLE_MS = 5000;
+const SIDEBAR_KEY = 'sidebar.collapsed';
 
-/**
- * Desktop sidebar: pinned open, or (default) an icon rail that expands while
- * the pointer is over it and folds away 5 s after the pointer leaves.
- */
+/** Desktop sidebar: full width, or collapsed to an icon rail. Remembered per device. */
 function useSidebar() {
-  const [pinned, setPinnedState] = useState(() => {
+  const [collapsed, setCollapsed] = useState(() => {
     try {
-      return localStorage.getItem(SIDEBAR_PIN_KEY) === 'true';
+      return localStorage.getItem(SIDEBAR_KEY) === 'true';
     } catch {
       return false;
     }
   });
-  const [open, setOpen] = useState(true);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancel = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-  };
-  const scheduleClose = () => {
-    cancel();
-    timer.current = setTimeout(() => setOpen(false), SIDEBAR_IDLE_MS);
-  };
-  // Starts open, then folds away if the pointer never comes to it.
-  useEffect(() => {
-    scheduleClose();
-    return cancel;
-  }, []);
-  const setPinned = (v: boolean) => {
-    setPinnedState(v);
-    try {
-      localStorage.setItem(SIDEBAR_PIN_KEY, String(v));
-    } catch {
-      /* per-device convenience only */
-    }
-    if (!v) scheduleClose();
-  };
-  return {
-    pinned,
-    expanded: pinned || open,
-    setPinned,
-    onEnter: () => {
-      cancel();
-      setOpen(true);
-    },
-    onLeave: scheduleClose,
-  };
+  const toggle = () =>
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, String(!c));
+      } catch {
+        /* per-device convenience only */
+      }
+      return !c;
+    });
+  return { expanded: !collapsed, toggle };
 }
 
 export function Layout() {
@@ -585,32 +557,24 @@ export function Layout() {
 
   return (
     <div className="min-h-dvh md:flex">
-      {/* Reserves the rail's width; when unpinned the expanded panel floats over the page. */}
-      <div className={cn('sticky top-0 z-40 hidden h-dvh shrink-0 transition-[width] duration-200 md:block', sidebar.pinned ? 'w-64' : 'w-[4.5rem]')}>
       <aside
-        onMouseEnter={sidebar.onEnter}
-        onMouseLeave={sidebar.onLeave}
-        onFocus={sidebar.onEnter}
         className={cn(
-          'safe-top absolute inset-y-0 left-0 z-40 flex flex-col overflow-hidden border-r border-line bg-surface transition-[width,box-shadow] duration-200',
+          'safe-top sticky top-0 hidden h-dvh shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200 md:flex',
           wide ? 'w-64' : 'w-[4.5rem]',
-          wide && !sidebar.pinned && 'shadow-pop',
         )}
       >
-        <div className={cn('flex items-center gap-2.5 py-5', wide ? 'px-5' : 'justify-center px-0')}>
+        <div className={cn('flex items-center gap-2.5 py-5', wide ? 'px-5' : 'flex-col px-0')}>
           <AppLogo size="sm" />
           {wide && <span className="flex-1 truncate text-[15px] font-semibold tracking-tight">Student OS</span>}
-          {wide && (
-            <button
-              type="button"
-              onClick={() => sidebar.setPinned(!sidebar.pinned)}
-              className="-mr-1.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
-              aria-label={sidebar.pinned ? 'Collapse sidebar (folds away after 5 s)' : 'Keep sidebar open'}
-              title={sidebar.pinned ? 'Collapse sidebar (folds away after 5 s)' : 'Keep sidebar open'}
-            >
-              {sidebar.pinned ? <PanelLeftClose className="size-[18px]" /> : <PanelLeftOpen className="size-[18px]" />}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={sidebar.toggle}
+            className={cn('rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink', wide && '-mr-1.5')}
+            aria-label={wide ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={wide ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {wide ? <PanelLeftClose className="size-[18px]" /> : <PanelLeftOpen className="size-[18px]" />}
+          </button>
         </div>
         <nav className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3" aria-label="Main">
           {NAV.map((item) => (
@@ -632,7 +596,6 @@ export function Layout() {
           </NavLink>
         </div>
       </aside>
-      </div>
 
       <div className="min-w-0 flex-1">
         <header className="safe-top sticky top-0 z-30 border-b border-line bg-page/85 backdrop-blur-md">
