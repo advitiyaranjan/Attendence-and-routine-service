@@ -168,3 +168,8 @@ body {
 .kb-open .hide-on-kb {
   display: none;
 }
+
+/* Keyboard open: the composer sits right above it; no home-indicator gap needed. */
+.kb-open [data-viewport-fit] {
+  padding-bottom: 0.5rem;
+}

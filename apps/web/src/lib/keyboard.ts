@@ -12,6 +12,8 @@ function isTextField(el: Element | null): el is HTMLElement {
 }
 
 function reveal(el: HTMLElement) {
+  // Full-screen layouts sized to the visible viewport (AI Pilot) manage this themselves.
+  if (el.closest('[data-viewport-fit]')) return;
   // Wait for the keyboard animation, then keep the field (and the area just below it) visible.
   setTimeout(() => {
     if (document.activeElement === el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -27,7 +29,17 @@ export function initKeyboard() {
   });
 
   const vv = window.visualViewport;
+  // --vvh / --vvtop: the area actually visible above the on-screen keyboard.
+  // Layouts that must never sit behind the keyboard size themselves with these.
+  const fit = () => {
+    root.style.setProperty('--vvh', `${Math.round(vv ? vv.height : window.innerHeight)}px`);
+    root.style.setProperty('--vvtop', `${Math.round(vv ? vv.offsetTop : 0)}px`);
+  };
+  fit();
+  window.addEventListener('resize', fit);
   if (vv) {
+    vv.addEventListener('scroll', fit);
+    vv.addEventListener('resize', fit);
     const onResize = () => {
       const open = window.innerHeight - vv.height > 150 && isTextField(document.activeElement);
       root.classList.toggle('kb-open', open);

@@ -418,7 +418,6 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
   const aiAvailable = useApp((s) => s.aiAvailable);
   const aiIssue = useApp((s) => s.aiIssue);
   const settings = useSettings();
-  const endRef = useRef<HTMLDivElement>(null);
   const sentInitial = useRef(false);
   const navigate = useNavigate();
 
@@ -430,9 +429,26 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
     if (online && aiAvailable !== true) void refreshAiStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [online]);
+  // Follow the conversation only while the student is at (or near) the bottom,
+  // so reading older messages is never interrupted.
+  const listRef = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const toBottom = () => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
   useEffect(() => {
-    if (messages.length || busy) endRef.current?.scrollIntoView({ block: 'end' });
+    const last = messages[messages.length - 1];
+    if (atBottom.current || last?.role === 'user') toBottom();
   }, [messages, busy]);
+  // When the keyboard opens or closes the list changes height: keep the latest message in view.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => atBottom.current && toBottom());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     if (initialPrompt && !sentInitial.current) {
       sentInitial.current = true;
@@ -520,7 +536,14 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
         </div>
       )}
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-2">
+      <div
+        ref={listRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pb-2"
+      >
         {messages.length === 0 && (
           <div className="space-y-4 py-2">
             <div className="flex items-start gap-3">
@@ -569,7 +592,6 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
             <Sparkles className="size-4 animate-pulse text-accent" /> AI Pilot is thinking…
           </div>
         )}
-        <div ref={endRef} />
       </div>
 
       {files.length > 0 && (
@@ -709,7 +731,7 @@ export function CopilotPanel() {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] md:bg-black/10" onClick={() => setOpen(false)} />
-      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-2.5 pb-2 pt-2 shadow-pop md:w-[460px] md:px-4 md:pb-3 md:pt-3" aria-label="AI Pilot">
+      <aside data-viewport-fit style={{ top: 'var(--vvtop, 0px)', height: 'var(--vvh, 100dvh)' }} className="safe-top safe-bottom fixed right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-2.5 pb-2 pt-2 shadow-pop md:w-[460px] md:px-4 md:pb-3 md:pt-3" aria-label="AI Pilot">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-semibold">
             <button type="button" onClick={() => setOpen(false)} className="-ml-1.5 inline-flex size-9 items-center justify-center rounded-xl text-ink-2 hover:bg-surface-2 hover:text-ink" aria-label="Go back" title="Go back">
