@@ -42,9 +42,11 @@ interface CopilotState {
   messages: CopilotMessage[];
   busy: boolean;
   open: boolean;
+  /** Sent once when the panel opens (e.g. from a "Plan my day" link). */
+  pendingPrompt: string | null;
   loaded: boolean;
   load(): Promise<void>;
-  setOpen(open: boolean): void;
+  setOpen(open: boolean, prompt?: string | null): void;
   send(text: string, files?: PreparedAttachment[]): Promise<void>;
   choose(messageId: string, option: ClarifyOption): Promise<void>;
   confirm(messageId: string, proposalId: string): Promise<void>;
@@ -111,6 +113,7 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
     messages: [],
     busy: false,
     open: false,
+    pendingPrompt: null,
     loaded: false,
 
     async load() {
@@ -119,8 +122,8 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
       set({ messages: history, loaded: true });
     },
 
-    setOpen(open) {
-      set({ open });
+    setOpen(open, prompt = null) {
+      set({ open, pendingPrompt: open ? prompt : null });
     },
 
     async send(text, files = []) {

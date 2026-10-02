@@ -669,7 +669,19 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
 
 /** Slide-over panel available from every page. */
 export function CopilotPanel() {
-  const { open, setOpen } = useCopilot();
+  const { open, setOpen, pendingPrompt } = useCopilot();
+  // Every link to /assistant opens this panel instead, so there is one AI Pilot screen.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element).closest?.('a[href]');
+      if (!a || e.metaKey || e.ctrlKey || new URL((a as HTMLAnchorElement).href).pathname !== '/assistant') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(true);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [setOpen]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     window.addEventListener('keydown', onKey);
@@ -679,6 +691,8 @@ export function CopilotPanel() {
   useEffect(() => {
     if (!open) return;
     window.history.pushState({ ...(window.history.state as object), copilot: true }, '');
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     let popped = false;
     const onPop = () => {
       popped = true;
@@ -686,6 +700,7 @@ export function CopilotPanel() {
     };
     window.addEventListener('popstate', onPop);
     return () => {
+      document.body.style.overflow = prevOverflow;
       window.removeEventListener('popstate', onPop);
       if (!popped && (window.history.state as { copilot?: boolean } | null)?.copilot) window.history.back();
     };
@@ -709,7 +724,7 @@ export function CopilotPanel() {
             <X className="size-4" />
           </Button>
         </div>
-        <CopilotChat compact />
+        <CopilotChat compact initialPrompt={pendingPrompt} />
       </aside>
     </>
   );
