@@ -38,7 +38,33 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     ...(settings.studyTimes.length ? { preferredStudyTimes: settings.studyTimes } : {}),
     subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code })),
   };
-  if (p.shareName && settings.profile.name) ctx.studentName = settings.profile.name;
+  if (p.readProfile) {
+    const pr = settings.profile;
+    ctx.profile = {
+      name: pr.name || null,
+      college: pr.college || null,
+      course: pr.course || null,
+      semester: pr.semester || null,
+      academicYear: pr.academicYear || null,
+      bio: pr.bio || null,
+      preferredStudyTimes: settings.studyTimes,
+      studyHours: settings.studyWindow,
+    };
+  } else if (p.shareName && settings.profile.name) {
+    ctx.studentName = settings.profile.name;
+  }
+  if (p.readSettings) {
+    ctx.settings = {
+      attendanceRule: { minimum: settings.minAttendance, target: settings.targetAttendance, safe: settings.safeAttendance },
+      dailyStudyTargetMinutes: settings.dailyStudyTargetMinutes,
+      semester: { start: settings.semesterStart, end: settings.semesterEnd },
+      workingDays: settings.workingDays,
+      revisionIntervals: settings.revisionIntervals,
+      theme: settings.theme,
+      classReminderMinutes: settings.notifications.categories.classes.offsets,
+      aiPower: `${settings.aiPower} (user-only: you can't change this)`,
+    };
+  }
 
   if (p.readCalendar) {
     const classes = await occurrencesBetween(addDays(today, -7), addDays(today, 14), settings);

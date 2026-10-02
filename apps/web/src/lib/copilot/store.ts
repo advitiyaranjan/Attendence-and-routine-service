@@ -8,7 +8,7 @@
  */
 import { create as createStore } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { actionAllowed, PERMISSION_LABEL, todayISO, type AIIntent, type ActionName } from '@student-os/core';
+import { canAutoApply, PERMISSION_LABEL, requiredPermissions, todayISO, type AIIntent, type ActionName } from '@student-os/core';
 import { api, ApiError } from '../api';
 import type { AttachmentMeta, PreparedAttachment } from './attachments';
 import { kvGet, kvSet } from '../db';
@@ -149,7 +149,7 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
 
       set({ busy: true });
       try {
-        const payload = { messages: transcript(get().messages), context: await buildCommandContext(), today: todayISO(), permissions: settings.aiPermissions };
+        const payload = { messages: transcript(get().messages), context: await buildCommandContext(), today: todayISO(), permissions: settings.aiPermissions, aiPower: settings.aiPower };
         let form: FormData | undefined;
         if (files.length) {
           form = new FormData();
@@ -159,16 +159,26 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
         const res = await api<CommandResponse>('/api/ai/command', form ? { form } : { body: payload });
         reply.content = res.reply;
         for (const intent of res.intents) {
-          const { ok, missing } = actionAllowed(intent.action, settings.aiPermissions);
-          if (!ok) {
-            (reply.notices ??= []).push(`I can't do that without permission: ${missing.map((m) => PERMISSION_LABEL[m]).join(', ')} (Settings → AI permissions).`);
+          // Enforced again here (the server already filtered): the device's own permissions decide what runs.
+          const missing = requiredPermissions(intent.action, intent.params as Record<string, unknown>).filter((p) => !settings.aiPermissions[p]);
+          if (missing.length) {
+            (reply.notices ??= []).push(`I don't have permission to do that (${missing.map((m) => PERMISSION_LABEL[m]).join(', ')}). You can allow it in Settings → AI Pilot.`);
             continue;
           }
           apply(reply, await prepareAction(intent.action, intent.params as Record<string, unknown>), settings.aiPermissions.instantReadOnly);
         }
         for (const r of res.rejected) {
-          (reply.notices ??= []).push(r.reason.startsWith('Not permitted') ? `I can't do that: ${r.reason.replace('Not permitted: ', '')} is turned off in Settings → AI permissions.` : `I skipped an invalid suggestion (${r.action}).`);
+          (reply.notices ??= []).push(
+            r.reason.startsWith('Protected: ')
+              ? r.reason.slice('Protected: '.length)
+              : r.reason.startsWith('Not permitted')
+                ? `I don't have permission to do that (${r.reason.replace('Not permitted: ', '')}). You can allow it in Settings → AI Pilot.`
+                : `I skipped an invalid suggestion (${r.action}).`,
+          );
         }
+        // Everything asked for was blocked: don't show a reply that says it was prepared or done.
+        const blocked = res.rejected.some((r) => r.reason.startsWith('Not permitted') || r.reason.startsWith('Protected: '));
+        if (blocked && !reply.proposals?.length && /\b(prepared|updated|changed|done|added|set)\b/i.test(reply.content)) reply.content = '';
         if (res.clarification && !reply.clarification) {
           reply.clarification = { question: res.clarification.question, options: res.clarification.options.map((o) => ({ label: o, send: o })) };
         }
@@ -184,6 +194,13 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
           ),
         });
         append(reply);
+        // Areas set to "Full access" apply straight away (still logged and undoable).
+        for (const p of reply.proposals ?? []) {
+          if (canAutoApply(p.action, settings.aiPermissions)) {
+            patchProposal(reply.id, p.id, (x) => ({ ...x, autoApplied: true }));
+            await get().confirm(reply.id, p.id);
+          }
+        }
       } catch (err) {
         append({ ...reply, content: err instanceof ApiError ? `⚠ ${err.message}` : '⚠ Something went wrong. Please try again.' });
       } finally {

@@ -9,6 +9,8 @@ import {
   reminderDates,
   settingsSchema,
   validateIntents,
+  canAutoApply,
+  PERMISSION_LABEL,
   type PlannerData,
   type Settings,
 } from './index';
@@ -136,6 +138,16 @@ describe('timezones', () => {
 });
 
 describe('AI action registry', () => {
+  it('reports a turned-off action as not permitted, even with malformed params', () => {
+    const perms = settings().aiPermissions;
+    const { intents, rejected } = validateIntents([{ action: 'update_profile', params: {} }], { ...perms, updateProfile: false });
+    expect(intents).toEqual([]);
+    expect(rejected[0]?.reason).toMatch(/^Not permitted: Update profile/);
+    // Reminder-only settings changes need just the notification permission.
+    const ok = validateIntents([{ action: 'update_settings', params: { changes: { classReminderMinutes: [10] } } }], { ...perms, modifySettings: false, modifyNotifications: true });
+    expect(ok.intents).toHaveLength(1);
+  });
+
   it('validates intents and rejects unknown, malformed or unpermitted ones', () => {
     const { intents, rejected } = validateIntents(
       [
@@ -146,13 +158,54 @@ describe('AI action registry', () => {
         { action: 'delete_task', params: { target: { title: 'x' } } },
         { action: 'move_revisions', params: { fromDate: '2026-10-03', toDate: '2026-10-04' } },
       ],
-      { ...settings().aiPermissions, deleteData: false, bulkChanges: false },
+      { ...settings().aiPermissions, deleteTasks: false, bulkChanges: false },
     );
     expect(intents.map((i) => i.action)).toEqual(['mark_attendance', 'reschedule_class']);
     expect(intents[1]!.params).toMatchObject({ target: { time: '10:00' }, newStartTime: '14:00' });
     expect(rejected.map((r) => r.action)).toEqual(['drop_table', 'create_task', 'delete_task', 'move_revisions']);
-    expect(rejected[2]!.reason).toMatch(/Delete data/);
-    expect(rejected[3]!.reason).toMatch(/Bulk changes/);
+    expect(rejected[2]!.reason).toMatch(/Delete todos/);
+    expect(rejected[3]!.reason).toMatch(/many items at once/);
+  });
+
+  it('never lets AI Pilot change AI Power or its own permissions, whatever is granted', () => {
+    const all = Object.fromEntries(Object.keys(PERMISSION_LABEL).map((k) => [k, true]));
+    const { intents, rejected } = validateIntents(
+      [
+        { action: 'update_settings', params: { changes: { aiPower: 'maximum' } } },
+        { action: 'update_settings', params: { changes: { minAttendance: 80, aiPower: 'maximum' } } },
+        { action: 'update_settings', params: { changes: { aiPermissions: { deleteTasks: true } } } },
+        { action: 'set_ai_power', params: { level: 'maximum' } },
+        { action: 'update_settings', params: { changes: { minAttendance: 80 } } },
+      ],
+      all,
+    );
+    expect(intents.map((i) => i.action)).toEqual(['update_settings']);
+    expect(rejected).toHaveLength(4);
+    for (const r of rejected) expect(r.reason).toMatch(/^Protected: AI Power and AI permissions can only be changed by you/);
+  });
+
+  it('validates profile updates and asks for complete study hours', () => {
+    const perms = settings().aiPermissions;
+    const ok = validateIntents([{ action: 'update_profile', params: { changes: { name: 'Advitiya', studyStart: '7 PM', studyEnd: '11 PM' } } }], perms);
+    expect(ok.intents[0]!.params).toMatchObject({ changes: { name: 'Advitiya', studyStart: '19:00', studyEnd: '23:00' } });
+    expect(validateIntents([{ action: 'update_profile', params: { changes: {} } }], perms).rejected[0]!.reason).toMatch(/No profile change/);
+    expect(validateIntents([{ action: 'update_profile', params: { changes: { studyStart: '19:00' } } }], perms).rejected[0]!.reason).toMatch(/start and an end/);
+    expect(validateIntents([{ action: 'update_profile', params: { changes: { name: 'X' } } }], { ...perms, updateProfile: false }).rejected[0]!.reason).toMatch(/Update profile/);
+  });
+
+  it('auto-applies only creates/updates in areas with full access, never deletions or bulk changes', () => {
+    const perms = settingsSchema.parse({ ...meta('settings'), aiPermissions: { access: { tasks: 'full' } } }).aiPermissions;
+    expect(canAutoApply('create_task', perms)).toBe(true);
+    expect(canAutoApply('update_task', perms)).toBe(true);
+    expect(canAutoApply('delete_task', perms)).toBe(false);
+    expect(canAutoApply('create_event', perms)).toBe(false);
+    expect(canAutoApply('move_revisions', { access: { ...perms.access, learning: 'full' } })).toBe(false);
+  });
+
+  it('needs the notification permission to change reminder timing', () => {
+    const perms = { ...settings().aiPermissions, modifyNotifications: false };
+    expect(validateIntents([{ action: 'update_settings', params: { changes: { classReminderMinutes: [10] } } }], perms).rejected[0]!.reason).toMatch(/notification preferences/);
+    expect(validateIntents([{ action: 'update_settings', params: { changes: { minAttendance: 80 } } }], perms).intents).toHaveLength(1);
   });
 
   it('refs are short, stable and do not reveal ids', () => {

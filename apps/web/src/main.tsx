@@ -5,6 +5,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { initAuth } from './lib/auth';
 import { runMigrations } from './lib/migrations';
+import { initKeyboard } from './lib/keyboard';
 import { initNative } from './lib/native';
 import { performNotificationAction, startNotificationScheduler, syncTimezone } from './lib/notifications';
 import { isNative } from './lib/platform';
@@ -14,6 +15,7 @@ import './index.css';
 // In the Android app every asset ships inside the APK, so no service worker is needed.
 if (!isNative) registerSW({ immediate: true });
 void runMigrations();
+initKeyboard();
 startSyncEngine();
 void initAuth();
 startNotificationScheduler();

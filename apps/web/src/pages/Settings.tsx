@@ -11,6 +11,7 @@ import { cn } from '../components/ui';
 import { AcademicSection, AccountSection, AISection, AppearanceSection, AttendanceSection, DataSection, NotificationsSection, ProfileSection, StudySection } from '../components/settings/sections';
 import { useMedia, useSettings } from '../lib/hooks';
 import { useApp, type User } from '../lib/store';
+import { BackButton } from '../components/ui';
 
 interface SectionDef {
   id: string;
@@ -43,7 +44,7 @@ const GROUPS: Array<{ title: string; sections: SectionDef[] }> = [
     title: 'App',
     sections: [
       { id: 'notifications', title: 'Notifications', icon: Bell, summary: (s) => `${enabledCount(s)} reminder types on · sound ${s.notifications.sound ? 'on' : 'off'}`, Component: NotificationsSection },
-      { id: 'ai', title: 'AI Pilot', icon: Sparkles, summary: (s) => (s.aiPermissions.enabled ? 'On · you confirm every change' : 'Off'), Component: AISection },
+      { id: 'ai', title: 'AI Pilot', icon: Sparkles, summary: (s) => (!s.aiPermissions.enabled ? 'Off' : Object.values(s.aiPermissions.access).includes('full') ? `On · some full access · ${s.aiPower} power` : `On · you confirm every change · ${s.aiPower} power`), Component: AISection },
       { id: 'appearance', title: 'Appearance', icon: Palette, summary: (s) => `${{ system: 'Auto', light: 'Light', dark: 'Dark' }[s.theme]} theme · ${s.accent}`, Component: AppearanceSection },
       { id: 'data', title: 'Privacy & data', icon: Database, summary: () => 'Export or erase your data', Component: () => <DataSection /> },
     ],
@@ -127,7 +128,10 @@ export default function Settings() {
   if (!desktop && !current) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <div className="flex items-center gap-2">
+          <BackButton fallback="/more" />
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        </div>
         <ProfileCard s={s} user={user} />
         <Menu s={s} user={user} />
       </div>
@@ -140,16 +144,17 @@ export default function Settings() {
     <div className="md:grid md:grid-cols-[17rem_1fr] md:gap-8">
       {desktop && (
         <aside className="sticky top-20 self-start">
-          <h1 className="mb-4 text-2xl font-semibold tracking-tight">Settings</h1>
+          <div className="mb-4 flex items-center gap-2">
+            <BackButton fallback="/" />
+            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          </div>
           <Menu s={s} user={user} active={active.id} compact />
         </aside>
       )}
       <section aria-labelledby="settings-title" className="min-w-0">
         <header className="mb-5 flex items-center gap-2">
           {!desktop && (
-            <button onClick={() => navigate('/settings')} className="-ml-2 rounded-full p-2 text-ink-2 hover:bg-surface-2" aria-label="Back to settings">
-              <ChevronLeft className="size-5" />
-            </button>
+            <BackButton fallback="/settings" />
           )}
           <div>
             <h2 id="settings-title" className="text-xl font-semibold tracking-tight md:mt-12">

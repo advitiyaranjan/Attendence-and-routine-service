@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
-import { AlertTriangle, Bot, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Bot, Loader2, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
 import type { QuizResponse } from '@student-os/core';
 import { quiz as genQuiz, refreshAiStatus } from '../../lib/ai';
 import { errorMessage } from '../../lib/api';
@@ -56,10 +56,22 @@ function AttachmentChip({ meta, onRemove }: { meta: AttachmentMeta; onRemove?: (
 // ---------------------------------------------------------------------------
 // Voice input (Web Speech API where available)
 
-type SpeechRec = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+type SpeechRec = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start(): void;
+  stop(): void;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+};
 
 function speechCtor(): (new () => SpeechRec) | null {
-  const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+  const w = window as unknown as {
+    SpeechRecognition?: new () => SpeechRec;
+    webkitSpeechRecognition?: new () => SpeechRec;
+  };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
@@ -86,7 +98,12 @@ function NativeVoiceButton({ onText, disabled }: { onText: (t: string, final: bo
             return;
           }
           setListening(true);
-          const res = await SpeechRecognition.start({ language: navigator.language || 'en-US', maxResults: 1, popup: true, partialResults: false });
+          const res = await SpeechRecognition.start({
+            language: navigator.language || 'en-US',
+            maxResults: 1,
+            popup: true,
+            partialResults: false,
+          });
           const text = res.matches?.[0];
           if (text) onText(text, true);
         } catch {
@@ -229,9 +246,7 @@ function ProposalCard({ messageId, p }: { messageId: string; p: Proposal }) {
         </div>
       )}
 
-      {pending && p.affects.length > 0 && (
-        <p className="mt-2 text-xs text-muted">This will also update: {p.affects.join(' · ')}</p>
-      )}
+      {pending && p.affects.length > 0 && <p className="mt-2 text-xs text-muted">This will also update: {p.affects.join(' · ')}</p>}
 
       {editing && pending && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -291,7 +306,10 @@ function ProposalCard({ messageId, p }: { messageId: string; p: Proposal }) {
 
       {p.status === 'confirmed' && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="text-good-ink">{p.result}</span>
+          <span className="text-good-ink">
+            {p.result}
+            {p.autoApplied && <span className="ml-1 text-muted">· applied automatically (Full access)</span>}
+          </span>
           {p.logId && (
             <Button size="sm" variant="ghost" icon={<Undo2 className="size-3.5" />} onClick={() => void undo(messageId, p.id)}>
               Undo
@@ -313,7 +331,11 @@ function QuizLauncher({ message }: { message: CopilotMessage }) {
   const q = message.quiz!;
   const [quiz, setQuiz] = useState<QuizResponse | null>(null);
   const [busy, setBusy] = useState(false);
-  const [topicRef, setTopicRef] = useState<{ id: string | null; subjectId: string | null; title: string }>({ id: null, subjectId: null, title: q.topic });
+  const [topicRef, setTopicRef] = useState<{
+    id: string | null;
+    subjectId: string | null;
+    title: string;
+  }>({ id: null, subjectId: null, title: q.topic });
   const markStarted = useCopilot((s) => s.markQuizStarted);
 
   async function start() {
@@ -321,7 +343,11 @@ function QuizLauncher({ message }: { message: CopilotMessage }) {
     try {
       const topics = (await db.entity('topic').toArray()).filter((t) => !t.deletedAt);
       const t = topics.find((x) => x.title.toLowerCase().includes(q.topic.toLowerCase()) || q.topic.toLowerCase().includes(x.title.toLowerCase()));
-      setTopicRef({ id: t?.id ?? null, subjectId: t?.subjectId ?? null, title: t?.title ?? q.topic });
+      setTopicRef({
+        id: t?.id ?? null,
+        subjectId: t?.subjectId ?? null,
+        title: t?.title ?? q.topic,
+      });
       setQuiz(await genQuiz(t?.title ?? q.topic, q.count, q.difficulty));
       markStarted(message.id);
     } catch (err) {
@@ -360,7 +386,9 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-muted" /> {n}
         </p>
       ))}
-      {m.proposals?.map((p) => <ProposalCard key={p.id} messageId={m.id} p={p} />)}
+      {m.proposals?.map((p) => (
+        <ProposalCard key={p.id} messageId={m.id} p={p} />
+      ))}
       {m.clarification && (
         <div className="space-y-1.5">
           {m.clarification.question !== m.content && <p className="font-medium">{m.clarification.question}</p>}
@@ -484,7 +512,11 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
       {online && aiAvailable === false && <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">{aiIssue ?? 'AI is unavailable right now.'}</div>}
       {!settings.aiPermissions.enabled && (
         <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">
-          AI Pilot is off. Turn it on in <Link to="/settings/ai" className="text-accent">Settings → AI permissions</Link>.
+          AI Pilot is off. Turn it on in{' '}
+          <Link to="/settings/ai" className="text-accent">
+            Settings → AI permissions
+          </Link>
+          .
         </div>
       )}
 
@@ -560,7 +592,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
       />
       <form
         className={cn(
-          'mt-2 flex items-end gap-1.5 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15',
+          'mt-2 flex flex-col gap-1 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15',
           dragging && 'border-accent ring-3 ring-accent/15',
         )}
         onSubmit={(e) => {
@@ -579,18 +611,6 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           if (!disabled) void addFiles(e.dataTransfer.files);
         }}
       >
-        <Button
-          type="button"
-          variant="ghost"
-          className="size-10 shrink-0 rounded-xl p-0"
-          disabled={disabled || busy || files.length >= MAX_FILES}
-          loading={preparing}
-          aria-label="Attach photos or documents"
-          title="Attach photos, PDFs, Word, Excel or text files"
-          onClick={() => fileInput.current?.click()}
-        >
-          <Paperclip className="size-[18px] text-ink-2" />
-        </Button>
         <textarea
           value={input}
           onChange={(e) => {
@@ -613,22 +633,35 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
               void addFiles(pasted);
             }
           }}
-          placeholder={disabled ? 'AI unavailable right now' : files.length ? 'Add a message (optional)…' : 'Ask anything, or attach a photo or document…'}
+          placeholder={disabled ? 'AI unavailable right now' : files.length ? 'Add a message (optional)…' : 'Ask AI Pilot anything…'}
           disabled={disabled}
           rows={1}
-          className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 sm:text-sm"
+          className="max-h-32 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 sm:text-sm"
           aria-label="Message AI Pilot"
         />
-        <VoiceButton
-          disabled={disabled || busy}
-          onText={(t, final) => {
-            setInput(t);
-            if (final) submit(t);
-          }}
-        />
-        <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
-          <Send className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1.5" data-keep-focus>
+          <button
+            type="button"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3.5 text-sm font-medium text-accent transition-colors hover:border-accent/50 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-accent/25 disabled:pointer-events-none disabled:opacity-50"
+            disabled={disabled || busy || preparing || files.length >= MAX_FILES}
+            title="Upload photos, PDFs, Word, Excel or text files (up to 4)"
+            onClick={() => fileInput.current?.click()}
+          >
+            {preparing ? <Loader2 className="size-[18px] animate-spin" /> : <Paperclip className="size-[18px]" />}
+            Upload document
+          </button>
+          <span className="flex-1" />
+          <VoiceButton
+            disabled={disabled || busy}
+            onText={(t, final) => {
+              setInput(t);
+              if (final) submit(t);
+            }}
+          />
+          <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
+            <Send className="size-4" />
+          </Button>
+        </div>
       </form>
     </div>
   );

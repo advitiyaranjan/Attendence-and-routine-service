@@ -2,11 +2,11 @@ import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
-import { aiPermissionsSchema, isoDate } from '@student-os/core';
+import { aiPermissionsSchema, isoDate, type AIPermissions } from '@student-os/core';
 import { prisma } from '../../db';
 import { env } from '../../env';
 import { HttpError, parseBody } from '../../lib/http';
-import { AIService } from './service';
+import { AIService, type AIPower } from './service';
 
 export const aiRouter = Router();
 const ai = new AIService();
@@ -68,10 +68,24 @@ aiRouter.post('/command', commandUpload.array('files', 4), async (req, res) => {
       context,
       today: isoDate,
       permissions: aiPermissionsSchema.partial().default({}),
+      aiPower: z.enum(['low', 'balanced', 'high', 'maximum']).default('balanced'),
     }),
     raw,
   );
-  res.json(await ai.command(req.userId ?? null, body.messages, body.context, body.today, body.permissions, files));
+  // Signed-in users: permissions and AI Power come from their saved settings on the server,
+  // never from the request, so a client can't widen what AI Pilot may do.
+  let permissions: Partial<AIPermissions> = body.permissions;
+  let power: AIPower = body.aiPower;
+  if (req.userId) {
+    const stored = await prisma.userSettings.findUnique({ where: { userId: req.userId }, select: { data: true } });
+    const data = (stored?.data ?? null) as { aiPermissions?: unknown; aiPower?: AIPower } | null;
+    if (data) {
+      permissions = aiPermissionsSchema.parse(data.aiPermissions ?? {});
+      power = data.aiPower ?? 'balanced';
+    }
+  }
+  if (permissions.enabled === false) throw new HttpError(403, 'ai_disabled', 'AI Pilot is turned off in Settings → AI Pilot.');
+  res.json(await ai.command(req.userId ?? null, body.messages, body.context, body.today, permissions, files, power));
 });
 
 aiRouter.post('/flashcards', async (req, res) => {

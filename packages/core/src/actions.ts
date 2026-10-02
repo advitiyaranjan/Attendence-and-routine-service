@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import { isISODate, normalizeTime } from './dates';
-import type { AIPermission } from './entities';
+import { AI_PROTECTED_SETTINGS, type AIArea, type AIPermission, type AIPermissions } from './entities';
 
 const time = z.string().transform((v, ctx) => {
   const t = normalizeTime(v);
@@ -138,7 +138,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title? } }',
     schema: z.object({ target: taskTarget }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteTasks'],
   }),
   create_class: define({
     name: 'create_class',
@@ -224,7 +224,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title?, date? } }',
     schema: z.object({ target: eventTarget }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteEvents'],
   }),
   create_topic: define({
     name: 'create_topic',
@@ -262,7 +262,7 @@ export const ACTIONS = {
       .object({ subject: optStr(), topic: optStr(), fromDate: optDate, toDate: optDate })
       .refine((v) => v.subject || v.topic || v.fromDate || v.toDate, 'Too broad'),
     kind: 'delete',
-    permissions: ['deleteData', 'bulkChanges'],
+    permissions: ['deleteRevision', 'bulkChanges'],
     bulk: true,
   }),
   create_exam: define({
@@ -389,7 +389,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | name? } }',
     schema: z.object({ target: z.object({ ref, name: optStr() }) }),
     kind: 'delete',
-    permissions: ['manageSubjects', 'deleteData'],
+    permissions: ['manageSubjects', 'deleteSubjects'],
     affects: ['Subjects', 'Timetable', 'Calendar', 'Class reminders'],
   }),
   update_weekly_class: define({
@@ -412,7 +412,7 @@ export const ACTIONS = {
       target: z.object({ ref, subject: optStr(), weekday: z.number().int().min(0).max(6).nullish().transform((v) => v ?? null), time: optTime }),
     }),
     kind: 'delete',
-    permissions: ['modifyClasses', 'deleteData'],
+    permissions: ['modifyClasses', 'deleteEvents'],
     affects: ['Timetable', 'Calendar', 'Class reminders'],
   }),
   delete_exam: define({
@@ -421,7 +421,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title?, subject? } }',
     schema: z.object({ target: examTarget }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteExams'],
   }),
   delete_assignment: define({
     name: 'delete_assignment',
@@ -429,7 +429,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title? } }',
     schema: z.object({ target: assignmentTarget }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteExams'],
   }),
   delete_note: define({
     name: 'delete_note',
@@ -437,7 +437,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title? } }',
     schema: z.object({ target: z.object({ ref, title: optStr() }) }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteNotes'],
   }),
   update_reminder: define({
     name: 'update_reminder',
@@ -457,7 +457,7 @@ export const ACTIONS = {
     params: '{ target: { ref? | title? } }',
     schema: z.object({ target: z.object({ ref, title: optStr() }) }),
     kind: 'delete',
-    permissions: ['deleteData'],
+    permissions: ['deleteEvents'],
     affects: ['Reminders', 'Notifications'],
   }),
   update_settings: define({
@@ -481,6 +481,30 @@ export const ACTIONS = {
     kind: 'modify',
     permissions: ['modifySettings'],
     affects: ['Settings'],
+  }),
+  update_profile: define({
+    name: 'update_profile',
+    description: "Update the student's own profile: name, college, course, semester, academic year, bio, preferred study times/hours. Only fields the student explicitly asked to change.",
+    params: '{ changes: { name?, college?, course?, semester?, academicYear?, bio?, studyTimes?: [morning|afternoon|evening|night], studyStart?: HH:MM, studyEnd?: HH:MM } }',
+    schema: z.object({
+      changes: z
+        .object({
+          name: optStr(100),
+          college: optStr(200),
+          course: optStr(200),
+          semester: optStr(50),
+          academicYear: optStr(50),
+          bio: optStr(500),
+          studyTimes: z.array(z.enum(['morning', 'afternoon', 'evening', 'night'])).max(4).nullish(),
+          studyStart: optTime,
+          studyEnd: optTime,
+        })
+        .refine((c) => Object.values(c).some((v) => v !== null && v !== undefined), 'No profile change given')
+        .refine((c) => !c.studyStart === !c.studyEnd, 'Give both a start and an end for study hours'),
+    }),
+    kind: 'modify',
+    permissions: ['updateProfile'],
+    affects: ['Profile'],
   }),
   navigate: define({
     name: 'navigate',
@@ -506,33 +530,113 @@ export function actionAllowed(name: ActionName, perms: Partial<Record<AIPermissi
 }
 
 export const PERMISSION_LABEL: Record<AIPermission, string> = {
-  readCalendar: 'Read calendar & classes',
-  readAttendance: 'Read attendance',
-  readTasks: 'Read tasks & assignments',
-  readRevision: 'Read revision data',
-  readExams: 'Read exams',
-  readNotes: 'Read notes',
-  createTasks: 'Create tasks',
-  createEvents: 'Create calendar events & study sessions',
+  readProfile: 'View profile',
+  updateProfile: 'Update profile',
+  readTasks: 'View todos & assignments',
+  createTasks: 'Create todos',
+  modifyTasks: 'Update todos',
+  deleteTasks: 'Delete todos',
+  readCalendar: 'View schedule',
+  createEvents: 'Create events & study sessions',
+  modifyEvents: 'Update events',
+  deleteEvents: 'Delete events, reminders & timetable slots',
+  modifyClasses: 'Change classes & timetable',
+  createReminders: 'Create & update reminders',
+  readAttendance: 'View attendance',
+  modifyAttendance: 'Mark & change attendance',
+  readRevision: 'View topics & revisions',
   createRevision: 'Create topics, revisions & flashcards',
+  modifyRevision: 'Update revision dates',
+  deleteRevision: 'Delete revisions',
+  readExams: 'View exams & assignments',
   createExams: 'Create exams & assignments',
-  createReminders: 'Create reminders',
+  modifyExams: 'Update exams & assignments',
+  deleteExams: 'Delete exams & assignments',
+  manageSubjects: 'Create & update subjects',
+  deleteSubjects: 'Delete subjects',
+  readNotes: 'View notes',
   createNotes: 'Create notes',
-  modifyTasks: 'Modify tasks',
-  modifyEvents: 'Modify calendar events',
-  modifyRevision: 'Modify revision dates',
-  modifyAttendance: 'Modify attendance',
-  modifyClasses: 'Modify classes',
-  modifyExams: 'Modify exams & assignments',
-  deleteData: 'Delete data',
-  bulkChanges: 'Bulk changes',
-  manageSubjects: 'Create & edit subjects',
-  modifySettings: 'Change app settings',
+  deleteNotes: 'Delete notes',
+  readSettings: 'View settings',
+  modifySettings: 'Update allowed settings',
+  modifyNotifications: 'Update notification preferences',
+  bulkChanges: 'Change many items at once',
+};
+
+/** Which permission area each action belongs to (drives "Ask first" vs "Full access"). */
+export const ACTION_AREA: Record<ActionName, AIArea | null> = {
+  create_task: 'tasks',
+  update_task: 'tasks',
+  complete_task: 'tasks',
+  delete_task: 'tasks',
+  create_class: 'schedule',
+  cancel_class: 'schedule',
+  reschedule_class: 'schedule',
+  mark_attendance: 'attendance',
+  create_event: 'schedule',
+  create_events: 'schedule',
+  update_event: 'schedule',
+  delete_event: 'schedule',
+  create_topic: 'learning',
+  update_revision: 'learning',
+  move_revisions: 'learning',
+  delete_revisions: 'learning',
+  create_exam: 'exams',
+  update_exam: 'exams',
+  create_assignment: 'exams',
+  update_assignment: 'exams',
+  create_note: 'notes',
+  create_reminder: 'schedule',
+  generate_flashcards: 'learning',
+  generate_quiz: null,
+  create_subject: 'subjects',
+  update_subject: 'subjects',
+  delete_subject: 'subjects',
+  update_weekly_class: 'schedule',
+  delete_weekly_class: 'schedule',
+  delete_exam: 'exams',
+  delete_assignment: 'exams',
+  delete_note: 'notes',
+  update_reminder: 'schedule',
+  delete_reminder: 'schedule',
+  update_settings: 'settings',
+  update_profile: 'profile',
+  navigate: null,
 };
 
 /**
+ * Can this confirmed-or-not action be applied without a confirmation card?
+ * Only when its area has "Full access", and never for deletions or bulk changes.
+ */
+export function canAutoApply(name: ActionName, perms: Pick<AIPermissions, 'access'>): boolean {
+  const def = ACTIONS[name];
+  const area = ACTION_AREA[name];
+  if (!area || def.kind === 'delete' || def.kind === 'read' || def.bulk) return false;
+  return perms.access?.[area] === 'full';
+}
+
+/** Settings keys a request tries to touch that AI Pilot may never change. */
+export function protectedSettingsIn(changes: unknown): string[] {
+  if (!changes || typeof changes !== 'object') return [];
+  const keys = Object.keys(changes as Record<string, unknown>);
+  const lowered = keys.map((k) => k.toLowerCase().replace(/[^a-z]/g, ''));
+  const hits = new Set<string>();
+  for (const p of AI_PROTECTED_SETTINGS) {
+    const target = p.toLowerCase();
+    lowered.forEach((k, i) => {
+      if (k === target || k.includes('aipower') || k.includes('aipermission') || k === 'power') hits.add(keys[i]!);
+    });
+  }
+  return [...hits];
+}
+
+export const PROTECTED_SETTING_MESSAGE =
+  "AI Power and AI permissions can only be changed by you, in Settings → AI Pilot. I'm not allowed to change them.";
+
+/**
  * Validate raw model output into typed intents. Unknown actions, invalid
- * parameters and actions the student hasn't permitted are dropped with a reason.
+ * parameters, attempts to change protected settings and actions the student
+ * hasn't permitted are dropped with a reason.
  */
 export function validateIntents(
   raw: unknown[],
@@ -544,11 +648,23 @@ export function validateIntents(
     const obj = (item ?? {}) as Record<string, unknown>;
     const name = String(obj.action ?? obj.type ?? '');
     if (!(name in ACTIONS)) {
-      rejected.push({ action: name || 'unknown', reason: 'Unknown action' });
+      rejected.push({ action: name || 'unknown', reason: /power|permission/i.test(name) ? `Protected: ${PROTECTED_SETTING_MESSAGE}` : 'Unknown action' });
       continue;
     }
     const def = ACTIONS[name as ActionName];
-    const params = (obj.params ?? Object.fromEntries(Object.entries(obj).filter(([k]) => k !== 'action' && k !== 'type'))) as unknown;
+    const params = (obj.params ?? Object.fromEntries(Object.entries(obj).filter(([k]) => k !== 'action' && k !== 'type'))) as Record<string, unknown>;
+    // Hard rule: AI Power and AI permissions are user-only, whatever else is allowed.
+    if (name === 'update_settings' && protectedSettingsIn(params?.changes).length) {
+      rejected.push({ action: name, reason: `Protected: ${PROTECTED_SETTING_MESSAGE}` });
+      continue;
+    }
+    // Permission first, so a blocked action is reported as blocked even when its parameters are wrong.
+    // (update_settings depends on which fields change, so it is checked after parsing.)
+    const staticMissing = perms && name !== 'update_settings' ? def.permissions.filter((p) => !perms[p]) : [];
+    if (staticMissing.length) {
+      rejected.push({ action: name, reason: `Not permitted: ${staticMissing.map((m) => PERMISSION_LABEL[m]).join(', ')}` });
+      continue;
+    }
     const parsed = def.schema.safeParse(params);
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -556,8 +672,9 @@ export function validateIntents(
       continue;
     }
     if (perms) {
-      const { ok, missing } = actionAllowed(name as ActionName, perms);
-      if (!ok) {
+      const needed = requiredPermissions(name as ActionName, parsed.data as Record<string, unknown>);
+      const missing = needed.filter((p) => !perms[p]);
+      if (missing.length) {
         rejected.push({ action: name, reason: `Not permitted: ${missing.map((m) => PERMISSION_LABEL[m]).join(', ')}` });
         continue;
       }
@@ -565,6 +682,21 @@ export function validateIntents(
     intents.push({ action: name, params: parsed.data } as AIIntent);
   }
   return { intents, rejected };
+}
+
+/** Static permissions of an action, plus ones that depend on what it changes. */
+export function requiredPermissions(name: ActionName, params: Record<string, unknown>): AIPermission[] {
+  const needed = [...ACTIONS[name].permissions] as AIPermission[];
+  if (name === 'update_settings') {
+    const c = (params.changes ?? {}) as Record<string, unknown>;
+    const notif = c.classReminderMinutes !== null && c.classReminderMinutes !== undefined;
+    const other = Object.entries(c).some(([k, v]) => k !== 'classReminderMinutes' && v !== null && v !== undefined);
+    const out: AIPermission[] = [];
+    if (other) out.push('modifySettings');
+    if (notif) out.push('modifyNotifications');
+    return out.length ? out : needed;
+  }
+  return needed;
 }
 
 export const commandResponseSchema = z.object({
@@ -578,7 +710,12 @@ export const commandResponseSchema = z.object({
 
 /** Catalog text for the system prompt, limited to what the student allows. */
 export function actionCatalog(perms: Partial<Record<AIPermission, boolean>>): string {
-  return ACTION_NAMES.filter((n) => actionAllowed(n, perms).ok)
+  const allowed = (n: ActionName) => (n === 'update_settings' ? !!(perms.modifySettings || perms.modifyNotifications) : actionAllowed(n, perms).ok);
+  const list = ACTION_NAMES.filter(allowed)
     .map((n) => `- ${n}: ${ACTIONS[n].description} params ${ACTIONS[n].params}`)
     .join('\n');
+  const blocked = ACTION_NAMES.filter((n) => !allowed(n));
+  if (!blocked.length) return list;
+  // Named so the model can say it isn't allowed instead of improvising with another action.
+  return `${list}\n\nTurned off by the student (never return these; if asked, reply that you don't have permission and they can allow it in Settings → AI Pilot, and never claim it was done): ${blocked.join(', ')}`;
 }

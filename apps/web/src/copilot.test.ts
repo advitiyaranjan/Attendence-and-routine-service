@@ -11,7 +11,7 @@ vi.setSystemTime(new Date(2026, 9, 2, 12, 0));
 vi.stubGlobal('navigator', { onLine: true });
 
 const { db } = await import('./lib/db');
-const { create, saveSettings, getSettings } = await import('./lib/repo');
+const { asAiWrite, create, saveSettings, getSettings } = await import('./lib/repo');
 const { prepareAction } = await import('./lib/copilot/registry');
 const { confirmProposal, undoLog } = await import('./lib/copilot/run');
 const { useCopilot } = await import('./lib/copilot/store');
@@ -176,6 +176,31 @@ describe('subjects and settings', () => {
     await undoLog(done.logId!);
     expect((await getSettings()).notifications.categories.classes.offsets).toEqual([15]);
   });
+
+  it('updates the profile, study hours included, and undoes it', async () => {
+    const r = await prepareAction('update_profile', { changes: { name: 'Asha Rao', bio: 'Final-year CSE', studyStart: '19:00', studyEnd: '22:00' } });
+    expect(r.kind).toBe('proposal');
+    if (r.kind !== 'proposal') return;
+    const done = await confirmProposal(r.proposal);
+    const s = await getSettings();
+    expect([s.profile.name, s.profile.bio, s.studyWindow]).toEqual(['Asha Rao', 'Final-year CSE', { start: '19:00', end: '22:00' }]);
+    await undoLog(done.logId!);
+    expect((await getSettings()).studyWindow).toBeNull();
+  });
+
+  it('never lets AI change AI Power or AI permissions', async () => {
+    const before = await getSettings();
+    expect(await prepareAction('update_settings', { changes: { aiPower: 'maximum' } })).toMatchObject({ kind: 'error' });
+    expect(await prepareAction('update_settings', { changes: { minAttendance: 70, aiPermissions: { deleteTasks: true } } })).toMatchObject({ kind: 'error' });
+    // Even a write slipped into an AI action is refused at the storage layer.
+    await expect(asAiWrite(() => saveSettings({ aiPower: 'maximum' }))).rejects.toThrow();
+    const after = await getSettings();
+    expect([after.aiPower, after.minAttendance, after.aiPermissions]).toEqual([before.aiPower, before.minAttendance, before.aiPermissions]);
+    // The student can still change it themselves.
+    await saveSettings({ aiPower: 'high' });
+    expect((await getSettings()).aiPower).toBe('high');
+    await saveSettings({ aiPower: before.aiPower });
+  });
 });
 
 describe('Copilot command flow', () => {
@@ -185,7 +210,7 @@ describe('Copilot command flow', () => {
       { action: 'delete_task', params: { target: { title: 'anything' } } },
     ];
     // The student turned off deletions for this test: AI Pilot must refuse them.
-    await saveSettings({ aiPermissions: { ...(await getSettings()).aiPermissions, deleteData: false } });
+    await saveSettings({ aiPermissions: { ...(await getSettings()).aiPermissions, deleteTasks: false } });
     const settings = await getSettings();
     // What the server would return after validateIntents with the student's permissions.
     const { intents: ok, rejected } = validateIntents(intents, settings.aiPermissions);
@@ -198,7 +223,7 @@ describe('Copilot command flow', () => {
     expect(last.proposals).toHaveLength(1);
     expect(last.proposals![0]).toMatchObject({ action: 'create_task', status: 'pending', heading: 'Complete OS Assignment' });
     expect(last.proposals![0]!.lines).toContain('Priority: high');
-    expect(last.notices?.[0]).toMatch(/Delete data.*AI permissions/);
+    expect(last.notices?.[0]).toMatch(/Delete todos.*AI/);
     expect(await db.entity('task').count()).toBe(0);
 
     await useCopilot.getState().confirm(last.id, last.proposals![0]!.id);

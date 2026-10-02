@@ -281,38 +281,75 @@ export const notificationSettingsSchema = z.object({
 export type NotificationSettings = z.infer<typeof notificationSettingsSchema>;
 export type NotificationCategory = keyof NotificationSettings['categories'];
 
-/** What the AI may read and propose. Conservative by default; destructive and bulk changes are off. */
+/** Areas of the workspace AI Pilot can act on. Each has its own capabilities and an access level. */
+export const AI_AREAS = ['profile', 'tasks', 'schedule', 'attendance', 'learning', 'exams', 'subjects', 'notes', 'settings', 'notifications'] as const;
+export type AIArea = (typeof AI_AREAS)[number];
+
+/**
+ * Settings AI Pilot may never change, whatever permissions are granted.
+ * Enforced in the action schema, server-side intent validation and the
+ * client's write path (see guardAiSettingsPatch).
+ */
+export const AI_PROTECTED_SETTINGS = ['aiPower', 'aiPermissions'] as const;
+
+/** What AI Pilot may read and do. Every capability is an explicit switch. */
 export const aiPermissionsSchema = z.object({
   enabled: z.boolean().default(true),
   shareName: z.boolean().default(false),
-  readCalendar: z.boolean().default(true),
-  readAttendance: z.boolean().default(true),
+  // Profile
+  readProfile: z.boolean().default(true),
+  updateProfile: z.boolean().default(true),
+  // Todos
   readTasks: z.boolean().default(true),
-  readRevision: z.boolean().default(true),
-  readExams: z.boolean().default(true),
-  readNotes: z.boolean().default(false),
   createTasks: z.boolean().default(true),
-  createEvents: z.boolean().default(true),
-  createRevision: z.boolean().default(true),
-  createExams: z.boolean().default(true),
-  createReminders: z.boolean().default(true),
-  createNotes: z.boolean().default(true),
   modifyTasks: z.boolean().default(true),
+  deleteTasks: z.boolean().default(true),
+  // Schedule (calendar, timetable, reminders)
+  readCalendar: z.boolean().default(true),
+  createEvents: z.boolean().default(true),
   modifyEvents: z.boolean().default(true),
-  modifyRevision: z.boolean().default(true),
-  modifyAttendance: z.boolean().default(true),
+  deleteEvents: z.boolean().default(true),
   modifyClasses: z.boolean().default(true),
+  createReminders: z.boolean().default(true),
+  // Attendance
+  readAttendance: z.boolean().default(true),
+  modifyAttendance: z.boolean().default(true),
+  // Learning (topics, revisions, flashcards)
+  readRevision: z.boolean().default(true),
+  createRevision: z.boolean().default(true),
+  modifyRevision: z.boolean().default(true),
+  deleteRevision: z.boolean().default(true),
+  // Exams & assignments
+  readExams: z.boolean().default(true),
+  createExams: z.boolean().default(true),
   modifyExams: z.boolean().default(true),
+  deleteExams: z.boolean().default(true),
+  // Subjects
   manageSubjects: z.boolean().default(true),
+  deleteSubjects: z.boolean().default(true),
+  // Notes
+  readNotes: z.boolean().default(false),
+  createNotes: z.boolean().default(true),
+  deleteNotes: z.boolean().default(true),
+  // Settings & notifications (never AI Power or these permissions)
+  readSettings: z.boolean().default(true),
   modifySettings: z.boolean().default(true),
-  /** Everything still needs the student's confirmation; these only control what AI Pilot may propose. */
-  deleteData: z.boolean().default(true),
+  modifyNotifications: z.boolean().default(true),
+  // Changes to many records at once
   bulkChanges: z.boolean().default(true),
-  /** Read-only questions are answered without a confirmation step. */
+  /**
+   * Per area: 'ask' shows a confirmation card first; 'full' applies create/update
+   * actions straight away (still logged and undoable). Deletions and bulk changes
+   * always ask.
+   */
+  access: z
+    .object(Object.fromEntries(AI_AREAS.map((a) => [a, z.enum(['ask', 'full']).default('ask')])) as Record<AIArea, z.ZodDefault<z.ZodEnum<{ ask: 'ask'; full: 'full' }>>>)
+    .prefault({}),
+  /** Read-only actions (quiz, open a page) run without an extra tap. */
   instantReadOnly: z.boolean().default(true),
 });
 export type AIPermissions = z.infer<typeof aiPermissionsSchema>;
-export type AIPermission = Exclude<keyof AIPermissions, 'enabled' | 'shareName' | 'instantReadOnly'>;
+export type AIPermission = Exclude<keyof AIPermissions, 'enabled' | 'shareName' | 'instantReadOnly' | 'access'>;
 
 export const recurrenceSchema = z.object({
   freq: z.enum(['none', 'daily', 'weekdays', 'weekly', 'monthly', 'custom']).default('none'),
@@ -370,8 +407,9 @@ export const settingsSchema = syncMeta.extend({
       course: z.string().max(200).default(''),
       semester: z.string().max(50).default(''),
       academicYear: z.string().max(50).default(''),
+      bio: z.string().max(500).default(''),
     })
-    .default({ name: '', college: '', course: '', semester: '', academicYear: '' }),
+    .prefault({}),
   workingDays: z.array(z.number().int().min(0).max(6)).default([1, 2, 3, 4, 5]),
   collegeStart: hhmm.default('09:00'),
   collegeEnd: hhmm.default('17:00'),
@@ -385,6 +423,13 @@ export const settingsSchema = syncMeta.extend({
   dailyStudyTargetMinutes: z.number().int().min(0).max(1440).default(240),
   /** When the student prefers to study. A planning preference, not a hard rule. */
   studyTimes: z.array(z.enum(['morning', 'afternoon', 'evening', 'night'])).max(4).default([]),
+  /** Exact preferred study hours (e.g. 19:00–23:00), if the student set them. */
+  studyWindow: z.object({ start: hhmm, end: hhmm }).nullable().default(null),
+  /**
+   * How hard AI Pilot works (model tier and context size). USER ONLY:
+   * listed in AI_PROTECTED_SETTINGS, so AI Pilot can never change it.
+   */
+  aiPower: z.enum(['low', 'balanced', 'high', 'maximum']).default('balanced'),
   weekStartsOn: z.union([z.literal(0), z.literal(1)]).default(1),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
   accent: z.string().max(20).default('indigo'),

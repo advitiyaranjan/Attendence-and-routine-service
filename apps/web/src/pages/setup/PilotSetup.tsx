@@ -588,8 +588,9 @@ export function PilotSetup() {
           }}
         >
           {step === 'schedule' && (
-            <Button type="button" variant="ghost" aria-label="Upload timetable" onClick={() => fileRef.current?.click()}>
-              <Paperclip className="size-4" />
+            <Button type="button" variant="secondary" className="h-11 rounded-full" title="Upload a photo, PDF or spreadsheet of your timetable" onClick={() => fileRef.current?.click()}>
+              <Paperclip className="size-4" /> <span className="hidden sm:inline">Upload</span>
+              <span className="sr-only sm:hidden">Upload timetable</span>
             </Button>
           )}
           <Input

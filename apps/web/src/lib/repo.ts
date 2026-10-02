@@ -4,7 +4,7 @@
  * IndexedDB transaction, so no local change can be lost before it syncs.
  */
 import { v4 as uuid } from 'uuid';
-import { ENTITY_SCHEMAS, settingsSchema, type EntityMap, type EntityName, type RecordChange, type Settings } from '@student-os/core';
+import { AI_PROTECTED_SETTINGS, ENTITY_SCHEMAS, settingsSchema, type EntityMap, type EntityName, type RecordChange, type Settings } from '@student-os/core';
 import { db } from './db';
 import { deviceId } from './device';
 
@@ -28,6 +28,32 @@ export function emitDataChanged() {
 }
 
 let recording: RecordChange[] | null = null;
+let aiWriting = false;
+
+/**
+ * Run writes on behalf of AI Pilot. While active, any write that would change a
+ * user-only setting (AI Power, AI permissions) is refused, so no AI action can
+ * change them even through a bug in an action handler.
+ */
+export async function asAiWrite<T>(fn: () => Promise<T>): Promise<T> {
+  aiWriting = true;
+  try {
+    return await fn();
+  } finally {
+    aiWriting = false;
+  }
+}
+
+function guardAiSettingsWrite(entity: EntityName, before: unknown, after: unknown) {
+  if (!aiWriting || entity !== 'settings') return;
+  const b = (before ?? {}) as Record<string, unknown>;
+  const a = (after ?? {}) as Record<string, unknown>;
+  for (const key of AI_PROTECTED_SETTINGS) {
+    if (b[key] !== undefined && JSON.stringify(b[key]) !== JSON.stringify(a[key])) {
+      throw new Error('AI Pilot may not change AI Power or AI permissions.');
+    }
+  }
+}
 
 /**
  * Run a set of writes and capture every record they create, update or delete
@@ -106,6 +132,7 @@ export async function update<E extends EntityName>(entity: E, id: string, patch:
     deviceId: deviceId(),
     syncStatus: 'pending',
   });
+  guardAiSettingsWrite(entity, existing, record);
   await writeWithOutbox(entity, [record], 'upsert');
   track(entity, 'update', existing, record);
   return record;

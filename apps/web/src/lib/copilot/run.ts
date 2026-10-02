@@ -4,7 +4,7 @@
  */
 import { ENTITY_NAMES, type AIActionLog, type EntityName, type RecordChange } from '@student-os/core';
 import { db } from '../db';
-import { create, recordChanges, remove, update } from '../repo';
+import { asAiWrite, create, recordChanges, remove, update } from '../repo';
 import { executeProposal, type Proposal } from './registry';
 
 const META = new Set(['id', 'createdAt', 'updatedAt', 'deletedAt', 'version', 'deviceId', 'syncStatus']);
@@ -20,9 +20,11 @@ function detailsOf(p: Proposal) {
 export async function confirmProposal(p: Proposal): Promise<Proposal> {
   let message = '';
   try {
-    const changes = await recordChanges(async () => {
-      message = await executeProposal(p);
-    });
+    const changes = await recordChanges(() =>
+      asAiWrite(async () => {
+        message = await executeProposal(p);
+      }),
+    );
     const log = await create('aiActionLog', {
       action: p.action,
       summary: summaryOf(p),

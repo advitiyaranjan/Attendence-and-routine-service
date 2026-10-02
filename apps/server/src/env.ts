@@ -11,6 +11,9 @@ const schema = z
     GEMINI_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
     /** Tried in order when the primary model is overloaded or unavailable. */
+    /** Used first at AI Power "Maximum" / "Low". */
+    GEMINI_PRO_MODEL: z.string().default('gemini-3.1-pro-preview'),
+    GEMINI_LITE_MODEL: z.string().default('gemini-3.1-flash-lite'),
     GEMINI_FALLBACK_MODELS: z
       .string()
       .default('gemini-3.7-flash,gemini-3.5-flash,gemini-3.1-flash-lite')

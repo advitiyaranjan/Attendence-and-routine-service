@@ -14,7 +14,7 @@ async function aiPermissionsV2() {
   const settings = await db.entity('settings').get(SETTINGS_ID);
   if (settings) {
     await saveSettings({
-      aiPermissions: { ...settings.aiPermissions, deleteData: true, bulkChanges: true, manageSubjects: true, modifySettings: true },
+      aiPermissions: { ...settings.aiPermissions, bulkChanges: true, manageSubjects: true, modifySettings: true },
     });
   }
   await kvSet(key, true);

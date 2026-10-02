@@ -6,7 +6,7 @@ import { ENTITY_NAMES, initialRevisions, todayISO, WEEKDAY_SHORT, type Settings 
 import { AuthForm } from '../AuthForm';
 import { SyncBadge } from '../Layout';
 import { ServerAddress } from '../ServerAddress';
-import { Button, Chip, Input } from '../ui';
+import { Button, Chip, Input, Toggle } from '../ui';
 import { logout } from '../../lib/auth';
 import { db, kvGet } from '../../lib/db';
 import { isNative } from '../../lib/platform';
@@ -103,14 +103,46 @@ export function AccountSection() {
 export function ProfileSection({ s }: { s: Settings }) {
   const p = s.profile;
   const set = (k: keyof Settings['profile']) => (v: string) => save({ profile: { ...p, [k]: v } });
+  const timeInput = 'h-9 rounded-lg border border-line bg-surface-2 px-2 text-sm text-ink focus:border-accent focus:outline-none';
   return (
-    <SettingsGroup title="About you">
+    <div className="space-y-6">
+      <SettingsGroup title="About you">
       <TextRow label="Name" value={p.name} onSave={set('name')} placeholder="Your name" />
       <TextRow label="College" value={p.college} onSave={set('college')} placeholder="College or university" />
       <TextRow label="Course" value={p.course} onSave={set('course')} placeholder="e.g. B.Tech CSE" />
       <TextRow label="Semester" value={p.semester} onSave={set('semester')} placeholder="e.g. 5" />
       <TextRow label="Academic year" value={p.academicYear} onSave={set('academicYear')} placeholder="e.g. 2026–27" />
-    </SettingsGroup>
+      </SettingsGroup>
+      <SettingsGroup title="Bio" footer="A line or two about you. AI Pilot can use it to personalise plans when allowed.">
+        <SettingBlock>
+          <textarea
+            defaultValue={p.bio}
+            key={p.bio}
+            maxLength={500}
+            rows={3}
+            placeholder="e.g. Final-year CSE student preparing for placements"
+            aria-label="Bio"
+            onBlur={(e) => e.target.value !== p.bio && save({ profile: { ...p, bio: e.target.value } })}
+            className="w-full resize-y rounded-xl border border-line bg-surface-2 px-3 py-2 text-base text-ink placeholder:text-muted focus:border-accent focus:outline-none sm:text-sm"
+          />
+        </SettingBlock>
+      </SettingsGroup>
+      <SettingsGroup title="Study hours" footer="When you usually study. Revision and reminders are planned inside this window.">
+        <SettingBlock>
+          <Toggle checked={!!s.studyWindow} onChange={(v) => save({ studyWindow: v ? { start: '18:00', end: '21:00' } : null })} label="Set study hours" />
+        </SettingBlock>
+        {s.studyWindow && (
+          <>
+            <SettingRow label="From">
+              <input type="time" aria-label="Study from" className={timeInput} value={s.studyWindow.start} onChange={(e) => e.target.value && save({ studyWindow: { ...s.studyWindow!, start: e.target.value } })} />
+            </SettingRow>
+            <SettingRow label="Until">
+              <input type="time" aria-label="Study until" className={timeInput} value={s.studyWindow.end} onChange={(e) => e.target.value && save({ studyWindow: { ...s.studyWindow!, end: e.target.value } })} />
+            </SettingRow>
+          </>
+        )}
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -255,15 +287,7 @@ export function AppearanceSection({ s }: { s: Settings }) {
 }
 
 export function AISection({ s }: { s: Settings }) {
-  return (
-    <SettingsGroup footer="Gemini is reached only through your server. AI Pilot proposes changes; nothing happens until you confirm, and everything can be undone from AI activity.">
-      <SettingBlock>
-        <div className="py-2">
-          <AIPermissionSettings s={s} />
-        </div>
-      </SettingBlock>
-    </SettingsGroup>
-  );
+  return <AIPermissionSettings s={s} />;
 }
 
 export function DataSection() {

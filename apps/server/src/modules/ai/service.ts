@@ -13,6 +13,7 @@ import {
   reviewSummarySchema,
   timetableExtractionSchema,
 } from '@student-os/core';
+import { env } from '../../env';
 import { HttpError } from '../../lib/http';
 import { GeminiClient } from './gemini';
 import * as P from './prompts';
@@ -72,6 +73,26 @@ async function docxToText(buffer: Buffer): Promise<string> {
   }
 }
 
+export type AIPower = 'low' | 'balanced' | 'high' | 'maximum';
+
+/**
+ * AI Power (a user-only setting): which models AI Pilot tries first and how much
+ * of the conversation it sees. Every tier still falls back to the default chain.
+ */
+export function powerTier(power: AIPower, chain: string[]): { models: string[]; history: number } {
+  const lead = (m: string) => [m, ...chain.filter((x) => x !== m)];
+  switch (power) {
+    case 'low':
+      return { models: lead(env.GEMINI_LITE_MODEL), history: 8 };
+    case 'high':
+      return { models: chain, history: 24 };
+    case 'maximum':
+      return { models: lead(env.GEMINI_PRO_MODEL), history: 32 };
+    default:
+      return { models: chain, history: 16 };
+  }
+}
+
 function contextPart(context: unknown): Part {
   return { text: `CONTEXT:\n${JSON.stringify(context ?? {})}` };
 }
@@ -111,15 +132,25 @@ export class AIService {
    * Natural-language command → validated intents. Only actions the student
    * permits are offered to the model, and the output is filtered again.
    */
-  async command(userId: string | null, messages: ChatMessage[], context: unknown, today: string, permissions: Partial<AIPermissions>, files: UploadedFile[] = []) {
+  async command(
+    userId: string | null,
+    messages: ChatMessage[],
+    context: unknown,
+    today: string,
+    permissions: Partial<AIPermissions>,
+    files: UploadedFile[] = [],
+    power: AIPower = 'balanced',
+  ) {
     const attachments = (await Promise.all(files.map(attachmentParts))).flat();
+    const tier = powerTier(power, this.gemini.chain);
     const transcript = messages
-      .slice(-16)
+      .slice(-tier.history)
       .map((m) => `${m.role === 'user' ? 'Student' : 'AI Pilot'}: ${m.content}`)
       .join('\n\n');
     const raw = await this.gemini.generateJson({
       feature: 'command',
       userId,
+      models: tier.models,
       system: P.commandSystem(today, WEEKDAYS[weekdayOf(today)]!, actionCatalog(permissions)),
       parts: [
         contextPart(context),

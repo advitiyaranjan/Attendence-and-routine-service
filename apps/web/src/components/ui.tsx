@@ -1,6 +1,7 @@
 import clsx from 'clsx';
-import { AlertTriangle, Brain, CheckCircle2, CircleSlash, Loader2, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Brain, CheckCircle2, CircleSlash, Loader2, ShieldCheck, X } from 'lucide-react';
 import { forwardRef, useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { RISK_LABEL, type RiskLevel } from '@student-os/core';
 
 export const cn = clsx;
@@ -55,12 +56,38 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+/** Top-level screens (bottom-nav tabs) have no back button. */
+const ROOT_PATHS = new Set(['/', '/todos', '/calendar', '/more']);
+
+/** Go back through history; when opened directly (no in-app history), go to the parent screen. */
+export function BackButton({ fallback, className }: { fallback?: string; className?: string }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const parent = fallback ?? (pathname.split('/').slice(0, -1).join('/') || '/');
+  return (
+    <button
+      type="button"
+      onClick={() => ((window.history.state as { idx?: number } | null)?.idx ? navigate(-1) : navigate(parent, { replace: true }))}
+      className={cn('-ml-1.5 inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink', className)}
+      aria-label="Go back"
+      title="Go back"
+    >
+      <ArrowLeft className="size-5" />
+    </button>
+  );
+}
+
+export function PageHeader({ title, subtitle, actions, back }: { title: string; subtitle?: ReactNode; actions?: ReactNode; back?: boolean }) {
+  const { pathname } = useLocation();
+  const showBack = back ?? !ROOT_PATHS.has(pathname);
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
+      <div className="flex min-w-0 items-start gap-2">
+        {showBack && <BackButton className="mt-0.5 sm:mt-1" />}
+        <div className="min-w-0">
         <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-ink-2">{subtitle}</p>}
+        </div>
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
@@ -195,11 +222,28 @@ export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; ti
 
 export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
     if (open && !d.open) d.showModal();
     if (!open && d.open) d.close();
+  }, [open]);
+  // The phone/browser back gesture closes the modal instead of leaving the page.
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ ...(window.history.state as object), modal: true }, '');
+    let popped = false;
+    const onPop = () => {
+      popped = true;
+      closeRef.current();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (!popped && (window.history.state as { modal?: boolean } | null)?.modal) window.history.back();
+    };
   }, [open]);
   return (
     <dialog
@@ -216,8 +260,13 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
       {open && (
         <div className="safe-bottom flex max-h-[88dvh] flex-col sm:max-h-[85vh]">
           <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-line sm:hidden" aria-hidden />
-          <div className="flex items-center justify-between border-b border-line px-5 py-3">
-            <h2 className="font-semibold">{title}</h2>
+          <div className="flex items-center justify-between gap-2 border-b border-line px-5 py-3">
+            <div className="flex min-w-0 items-center gap-1">
+              <button type="button" onClick={onClose} className="-ml-2 rounded-lg p-1.5 text-ink-2 hover:bg-surface-2 sm:hidden" aria-label="Go back">
+                <ArrowLeft className="size-5" />
+              </button>
+              <h2 className="truncate font-semibold">{title}</h2>
+            </div>
             <button onClick={onClose} className="rounded-md p-1 text-ink-2 hover:bg-surface-2" aria-label="Close">
               <X className="size-4" />
             </button>

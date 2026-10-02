@@ -10,6 +10,8 @@
 import { v4 as uuid } from 'uuid';
 import {
   ACTIONS,
+  PROTECTED_SETTING_MESSAGE,
+  protectedSettingsIn,
   addDays,
   describeRecurrence,
   diffDays,
@@ -77,6 +79,8 @@ export interface Proposal {
   editable: EditableField[];
   status: ProposalStatus;
   result?: string;
+  /** Applied without a confirmation tap because its area has "Full access". */
+  autoApplied?: boolean;
   logId?: string;
   error?: string;
 }
@@ -1160,6 +1164,8 @@ const H: Record<ActionName, Handler> = {
 
   update_settings: {
     async prepare(params: any, env) {
+      // Hard rule (also enforced in validateIntents and the write path): user-only settings.
+      if (protectedSettingsIn(params.changes).length) return err(PROTECTED_SETTING_MESSAGE);
       const s = env.settings;
       const c = params.changes;
       const lines: string[] = [];
@@ -1191,6 +1197,44 @@ const H: Record<ActionName, Handler> = {
     async execute(p) {
       await saveSettings(p.resolved.patch as Partial<Settings>);
       return '✓ Settings updated';
+    },
+  },
+
+  update_profile: {
+    async prepare(params: any, env) {
+      const p = env.settings.profile;
+      const c = params.changes;
+      const lines: string[] = [];
+      const profile: Partial<Settings['profile']> = {};
+      const field = (key: keyof Settings['profile'], label: string) => {
+        const v = c[key];
+        if (v === null || v === undefined || v === p[key]) return;
+        profile[key] = v;
+        lines.push(`${label}: ${p[key] || '—'} → ${v}`);
+      };
+      field('name', 'Name');
+      field('college', 'College');
+      field('course', 'Course');
+      field('semester', 'Semester');
+      field('academicYear', 'Academic year');
+      field('bio', 'Bio');
+      const patch: Partial<Settings> = {};
+      if (Object.keys(profile).length) patch.profile = { ...p, ...profile };
+      if (c.studyTimes && JSON.stringify(c.studyTimes) !== JSON.stringify(env.settings.studyTimes)) {
+        patch.studyTimes = c.studyTimes;
+        lines.push(`Preferred study times: ${env.settings.studyTimes.join(', ') || '—'} → ${c.studyTimes.join(', ')}`);
+      }
+      if (c.studyStart && c.studyEnd) {
+        const w = env.settings.studyWindow;
+        patch.studyWindow = { start: c.studyStart, end: c.studyEnd };
+        lines.push(`Study hours: ${w ? range(w.start, w.end) : '—'} → ${range(c.studyStart, c.studyEnd)}`);
+      }
+      if (!lines.length) return err('Your profile already looks like that — nothing to change.');
+      return proposal('update_profile', params, { title: 'Update profile', heading: p.name || 'Your profile', lines, resolved: { patch } });
+    },
+    async execute(p) {
+      await saveSettings(p.resolved.patch as Partial<Settings>);
+      return '✓ Profile updated';
     },
   },
 

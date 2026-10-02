@@ -160,3 +160,8 @@ body {
 .safe-bottom {
   padding-bottom: var(--sab);
 }
+
+/* Mobile keyboard open: hide bottom chrome so the focused field stays visible. */
+.kb-open .hide-on-kb {
+  display: none;
+}

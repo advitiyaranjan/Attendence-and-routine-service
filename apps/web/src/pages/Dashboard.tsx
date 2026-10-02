@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, CalendarClock, Clock, Flame, MapPin, Repeat } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Clock, Flame, ListChecks, MapPin, Repeat, Sparkles, Target, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
 import {
+  addDays,
   computeStreak,
   diffDays,
   fmtPct,
@@ -19,7 +20,7 @@ import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, ris
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
 import { update } from '../lib/repo';
-import { toast } from '../lib/store';
+import { toast, useApp } from '../lib/store';
 import { RatingButtons } from './Revision';
 
 function greeting(d: Date) {
@@ -43,6 +44,8 @@ export function Dashboard() {
   const exams = useAll('exam') ?? [];
   const assignments = useAll('assignment') ?? [];
   const [rating, setRating] = useState<RevisionSchedule | null>(null);
+  const aiAvailable = useApp((x) => x.aiAvailable);
+  const online = useApp((x) => x.online);
 
   const activeClasses = classes.filter((c) => c.status !== 'cancelled' && c.status !== 'rescheduled');
   const minutesNow = nowMinutes(now);
@@ -73,6 +76,22 @@ export function Dashboard() {
   const unmarked = (attendance?.unmarked ?? []).filter((o) => o.date < today || timeToMinutes(o.endTime) <= minutesNow);
   const upcomingExams = exams.filter((e) => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
   const dueSoon = assignments.filter((a) => a.status !== 'submitted' && diffDays(today, a.deadline) <= 7).sort((a, b) => a.deadline.localeCompare(b.deadline));
+  // Productivity: this week vs the 7 days before.
+  const weekStart = addDays(today, -6);
+  const prevStart = addDays(today, -13);
+  const studyIn = (from: string, to: string) => sessions.filter((x) => x.date >= from && x.date <= to).reduce((a, x) => a + x.durationMinutes, 0);
+  const studyWeek = studyIn(weekStart, today);
+  const studyPrev = studyIn(prevStart, addDays(weekStart, -1));
+  const doneWeek = tasks.filter((t) => t.completedAt && t.completedAt.slice(0, 10) >= weekStart).length;
+  const doneToday = tasks.filter((t) => t.completedAt?.slice(0, 10) === today).length;
+  const revisedWeek = revisions.filter((r) => r.completedAt && r.completedAt.slice(0, 10) >= weekStart).length;
+  const classesLeft = activeClasses.filter((c) => timeToMinutes(c.endTime) > minutesNow).length;
+  const todaysEvents = events.filter((e) => e.date === today && !e.deletedAt).sort((a, b) => (a.startTime ?? '99').localeCompare(b.startTime ?? '99'));
+  const aiOn = settings.aiPermissions.enabled && online && aiAvailable !== false;
+
+  const plural = (n: number, word: string, many = word + 's') => `${n} ${n === 1 ? word : many}`;
+  const plan = [classesLeft && plural(classesLeft, 'class', 'classes'), openTasks.length && plural(openTasks.length, 'task'), dueRevisions.length && plural(dueRevisions.length, 'revision')].filter(Boolean) as string[];
+  const planLine = plan.length ? `Left today: ${plan.length > 1 ? plan.slice(0, -1).join(', ') + ' and ' + plan.at(-1) : plan[0]}.` : "You're all caught up for today.";
   const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = settings.profile.name.split(' ')[0];
 
@@ -83,7 +102,9 @@ export function Dashboard() {
           {greeting(now)}
           {firstName ? `, ${firstName}` : ''} 👋
         </h1>
-        <p className="mt-1 text-sm text-ink-2">{dateLabel}</p>
+        <p className="mt-1 text-sm text-ink-2">
+          {dateLabel} · {planLine}
+        </p>
       </div>
 
       <AskAI placeholder="Ask AI anything…" prompts={['What do I need to do today?', 'Plan my day', 'How is my attendance?']} />
@@ -123,21 +144,33 @@ export function Dashboard() {
             </div>
           </section>
 
-          {/* Today at a glance */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Tile label="Classes" value={activeClasses.length} to="/calendar" />
-            <Tile label="Tasks" value={openTasks.length} to="/todos" />
-            <Tile label="Revisions" value={dueRevisions.length} to="/revision" warn={overdueRevisions > 0} />
-            <Link to="/analytics" className="rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-colors hover:bg-surface-2">
-              <div className="text-xs font-medium text-ink-2">Study target</div>
-              <div className="mt-1 text-xl font-semibold tracking-tight tabular">
-                {formatMinutes(studyToday)}
-                <span className="text-sm font-normal text-muted"> / {formatMinutes(settings.dailyStudyTargetMinutes)}</span>
-              </div>
-              <div className="mt-2">
-                <Meter value={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0} color="var(--accent)" label="Study progress" />
-              </div>
-            </Link>
+          {/* Overview */}
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <StatCard
+              to="/todos"
+              icon={ListChecks}
+              label="Tasks"
+              value={openTasks.length}
+              sub={doneToday ? `${doneToday} done today` : 'due or planned'}
+              progress={doneToday + openTasks.length ? (doneToday / (doneToday + openTasks.length)) * 100 : undefined}
+            />
+            <StatCard to="/calendar" icon={CalendarDays} label="Schedule" value={classesLeft + todaysEvents.filter((e) => !e.completedAt).length} sub={`${plural(classesLeft, 'class', 'classes')} · ${plural(todaysEvents.length, 'event')}`} />
+            <StatCard
+              to="/analytics"
+              icon={Target}
+              label="Study"
+              value={formatMinutes(studyToday)}
+              sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
+              progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
+            />
+            <StatCard
+              to="/assistant"
+              icon={Bot}
+              label="AI Pilot"
+              value={aiOn ? 'Ready' : settings.aiPermissions.enabled ? 'Offline' : 'Off'}
+              sub={aiOn ? `${settings.aiPower[0]!.toUpperCase()}${settings.aiPower.slice(1)} power` : settings.aiPermissions.enabled ? 'Needs internet' : 'Turn on in Settings'}
+              tone={aiOn ? 'good' : 'muted'}
+            />
           </div>
 
           {unmarked.length > 0 && (
@@ -200,8 +233,8 @@ export function Dashboard() {
           </Card>
 
           <Card>
-            <SectionTitle action={<Link to="/calendar" className="text-xs font-medium text-accent">Calendar</Link>}>Today's classes</SectionTitle>
-            {classes.length === 0 ? (
+            <SectionTitle action={<Link to="/calendar" className="text-xs font-medium text-accent">Calendar</Link>}>Today's schedule</SectionTitle>
+            {classes.length === 0 && todaysEvents.length === 0 ? (
               <p className="text-sm text-ink-2">
                 No classes today.{' '}
                 <Link to="/classes" className="font-medium text-accent">
@@ -212,6 +245,14 @@ export function Dashboard() {
               <div className="divide-y divide-line">
                 {classes.map((c) => (
                   <ClassRow key={c.id} occ={c} subject={subjects.get(c.subjectId)} />
+                ))}
+                {todaysEvents.map((e) => (
+                  <div key={e.id} className={cn('flex items-center gap-3 py-2.5 text-sm', e.completedAt && 'opacity-60')}>
+                    <span className="w-16 shrink-0 text-xs font-medium text-ink-2 tabular">{e.startTime ? formatTime12(e.startTime) : 'All day'}</span>
+                    {e.subjectId ? <SubjectDot color={subjects.get(e.subjectId)?.color ?? 'var(--muted)'} /> : <CalendarClock className="size-3.5 shrink-0 text-muted" />}
+                    <span className={cn('min-w-0 flex-1 truncate', e.completedAt && 'line-through')}>{e.title}</span>
+                    <span className="shrink-0 text-xs capitalize text-muted">{e.type}</span>
+                  </div>
                 ))}
               </div>
             )}
@@ -296,15 +337,39 @@ export function Dashboard() {
             </Card>
           )}
 
-          {streak > 0 && (
-            <Card className="flex items-center gap-3">
-              <Flame className="size-6" style={{ color: 'var(--color-serious)' }} />
-              <div>
-                <div className="font-semibold">{streak}-day study streak</div>
-                <div className="text-xs text-muted">Keep the chain going</div>
+          <Card>
+            <SectionTitle>This week</SectionTitle>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <Insight value={formatMinutes(studyWeek)} label="studied" />
+              <Insight value={String(doneWeek)} label="tasks done" />
+              <Insight value={String(revisedWeek)} label="revisions" />
+            </div>
+            <div className="mt-3 space-y-1.5 text-xs text-ink-2">
+              {studyWeek + studyPrev > 0 && (
+                <p className="flex items-center gap-1.5">
+                  {studyWeek >= studyPrev ? <TrendingUp className="size-3.5 text-good-ink" /> : <TrendingDown className="size-3.5 text-critical-ink" />}
+                  {studyPrev === 0 ? 'More study than last week' : `${Math.round((Math.abs(studyWeek - studyPrev) / studyPrev) * 100)}% ${studyWeek >= studyPrev ? 'more' : 'less'} study than last week`}
+                </p>
+              )}
+              <p className="flex items-center gap-1.5">
+                <Flame className="size-3.5" style={{ color: 'var(--color-serious)' }} />
+                {streak > 0 ? `${streak}-day study streak. Keep the chain going.` : 'Study today to start a streak.'}
+              </p>
+            </div>
+          </Card>
+
+          <Link to="/assistant" className="group block rounded-2xl border border-accent/25 bg-accent-soft p-4 transition-colors hover:border-accent/50 sm:p-5">
+            <div className="flex items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink">
+                <Sparkles className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-ink">Open AI Pilot</div>
+                <div className="text-xs text-ink-2">Plan your day, upload a timetable, or update anything by asking.</div>
               </div>
-            </Card>
-          )}
+              <ArrowRight className="size-4 shrink-0 text-accent transition-transform group-hover:translate-x-0.5" />
+            </div>
+          </Link>
         </div>
       </div>
 
@@ -321,15 +386,32 @@ export function Dashboard() {
   );
 }
 
-function Tile({ label, value, to, warn }: { label: string; value: number; to: string; warn?: boolean }) {
+function StatCard({ to, icon: Icon, label, value, sub, progress, tone }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tone?: 'good' | 'muted' }) {
   return (
-    <Link to={to} className="rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-colors hover:bg-surface-2">
-      <div className="flex items-center justify-between text-xs font-medium text-ink-2">
-        {label}
-        {warn && <AlertTriangle className="size-3.5" style={{ color: 'var(--color-warning)' }} aria-label="Some overdue" />}
+    <Link to={to} className="min-w-0 rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-colors hover:bg-surface-2 sm:p-4">
+      <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-2">
+        <span className="truncate">{label}</span>
+        <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', tone === 'good' ? 'bg-good/15 text-good-ink' : tone === 'muted' ? 'bg-surface-2 text-muted' : 'bg-accent-soft text-accent')}>
+          <Icon className="size-4" />
+        </span>
       </div>
-      <div className="mt-1 text-2xl font-semibold tracking-tight tabular">{value}</div>
+      <div className="mt-1 truncate text-2xl font-semibold tracking-tight tabular">{value}</div>
+      <div className="truncate text-xs text-muted">{sub}</div>
+      {progress !== undefined && (
+        <div className="mt-2">
+          <Meter value={progress} color="var(--accent)" label={`${label} progress`} />
+        </div>
+      )}
     </Link>
+  );
+}
+
+function Insight({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-surface-2 px-2 py-2.5">
+      <div className="truncate text-lg font-semibold tracking-tight tabular">{value}</div>
+      <div className="text-[11px] text-muted">{label}</div>
+    </div>
   );
 }
 

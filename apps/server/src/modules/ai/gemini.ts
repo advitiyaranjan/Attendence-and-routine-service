@@ -11,6 +11,8 @@ export interface GenerateOptions<T> {
   system: string;
   parts: Part[];
   schema: ZodType<T>;
+  /** Model chain to try for this request (defaults to the configured chain). */
+  models?: string[];
 }
 
 /** HTTP status of a Gemini SDK error (from `.status`, or the JSON error body in the message). */
@@ -66,7 +68,7 @@ export class GeminiClient {
    * Call the primary model, falling back to the next one when a model is
    * overloaded, rate-limited or unavailable (503 / 429 / 404 / 500).
    */
-  private async callWithFallback(request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>, deadline: number) {
+  private async callWithFallback(request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>, deadline: number, models: string[] = this.models) {
     let lastErr: unknown;
     // Two passes over the chain; Google-side overloads are usually brief.
     for (const [pass, delay] of [0, this.retryDelayMs].entries()) {
@@ -74,7 +76,7 @@ export class GeminiClient {
         if (Date.now() + delay + 5000 > deadline) break;
         await new Promise((r) => setTimeout(r, delay));
       }
-      for (const model of this.models) {
+      for (const model of models) {
         const remaining = deadline - Date.now();
         if (remaining < 3000) throw new DeadlineError('AI time budget used up');
         try {
@@ -93,6 +95,11 @@ export class GeminiClient {
       }
     }
     throw lastErr;
+  }
+
+  /** The configured chain, for building per-request variants (e.g. AI Power). */
+  get chain(): string[] {
+    return [...this.models];
   }
 
   get available(): boolean {
@@ -116,6 +123,7 @@ export class GeminiClient {
             config: { systemInstruction: opts.system, responseMimeType: 'application/json' },
           },
           deadline,
+          opts.models,
         );
         text = response.text;
         usage = {
