@@ -1,0 +1,619 @@
+// Student OS — cloud database.
+//
+// Every synced model mirrors an entity in packages/core/src/entities.ts and
+// carries the sync metadata (id, createdAt, updatedAt, deletedAt, version,
+// deviceId). Ids are client-generated UUIDs. Calendar dates are stored as
+// "YYYY-MM-DD" strings and times as "HH:MM" to avoid timezone drift.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+
+model User {
+  id           String    @id @default(uuid())
+  email        String?   @unique
+  passwordHash String?
+  googleId     String?   @unique
+  name         String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  devices           Device[]
+  settings          UserSettings?
+  subjects          Subject[]
+  classSchedules    ClassSchedule[]
+  classInstances    ClassInstance[]
+  attendanceRecords AttendanceRecord[]
+  tasks             Task[]
+  calendarEvents    CalendarEvent[]
+  studySessions     StudySession[]
+  topics            Topic[]
+  revisionSchedules RevisionSchedule[]
+  exams             Exam[]
+  assignments       Assignment[]
+  notes             Note[]
+  flashcards        Flashcard[]
+  quizAttempts      QuizAttempt[]
+  dailyReviews      DailyReview[]
+  changes           ChangeLog[]
+  conflicts         ConflictLog[]
+  syncOperations    SyncOperation[]
+  aiUsage           AIUsage[]
+  aiConversations   AIConversation[]
+  reminders         Reminder[]
+  aiActionLogs      AiActionLog[]
+  pushSubscriptions PushSubscription[]
+  notifications     Notification[]
+}
+
+model Device {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSyncAt DateTime?
+
+  @@index([userId])
+}
+
+/// Settings are one JSON document per user (validated by settingsSchema).
+model UserSettings {
+  userId    String    @id
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Json
+  createdAt DateTime
+  updatedAt DateTime
+  deletedAt DateTime?
+  version   Int       @default(1)
+  deviceId  String
+}
+
+// ---------------------------------------------------------------------------
+// Timetable & attendance
+
+model Subject {
+  id               String    @id
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime
+  updatedAt        DateTime
+  deletedAt        DateTime?
+  version          Int       @default(1)
+  deviceId         String
+
+  name             String
+  code             String?
+  faculty          String?
+  credits          Float?
+  color            String
+  minAttendance    Float?
+  targetAttendance Float?
+  active           Boolean   @default(true)
+
+  schedules        ClassSchedule[]
+  instances        ClassInstance[]
+
+  @@index([userId, updatedAt])
+}
+
+model ClassSchedule {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  subjectId  String
+  subject    Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  weekday    Int
+  startTime  String
+  endTime    String
+  room       String?
+  faculty    String?
+  type       String
+  active     Boolean   @default(true)
+  validFrom  String?
+  validUntil String?
+
+  instances  ClassInstance[]
+
+  @@index([userId, updatedAt])
+  @@index([subjectId])
+}
+
+model ClassInstance {
+  id                String         @id
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime
+  updatedAt         DateTime
+  deletedAt         DateTime?
+  version           Int            @default(1)
+  deviceId          String
+
+  scheduleId        String?
+  schedule          ClassSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  subjectId         String
+  subject           Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  date              String
+  startTime         String
+  endTime           String
+  room              String?
+  status            String?
+  note              String?
+  rescheduledToId   String?
+  rescheduledFromId String?
+  isExtra           Boolean        @default(false)
+
+  @@index([userId, updatedAt])
+  @@index([userId, subjectId, date])
+}
+
+/// Append-only attendance history (preserves every mark, including conflict losers).
+model AttendanceRecord {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  instanceId String
+  subjectId  String
+  date       String
+  status     String
+  markedAt   DateTime
+
+  @@index([userId, updatedAt])
+  @@index([instanceId])
+}
+
+// ---------------------------------------------------------------------------
+// Planning
+
+model Task {
+  id               String    @id
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime
+  updatedAt        DateTime
+  deletedAt        DateTime?
+  version          Int       @default(1)
+  deviceId         String
+
+  title            String
+  notes            String?
+  category         String
+  priority         String
+  importance       Int       @default(3)
+  dueDate          String?
+  dueTime          String?
+  plannedDate      String?
+  estimatedMinutes Int?
+  subjectId        String?
+  status           String
+  completedAt      DateTime?
+  dependsOn        Json      @default("[]")
+  source           String    @default("manual")
+
+  @@index([userId, updatedAt])
+  @@index([userId, dueDate])
+}
+
+model CalendarEvent {
+  id          String    @id
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime
+  updatedAt   DateTime
+  deletedAt   DateTime?
+  version     Int       @default(1)
+  deviceId    String
+
+  title       String
+  type        String
+  date        String
+  startTime   String?
+  endTime     String?
+  subjectId   String?
+  notes       String?
+  completedAt DateTime?
+  source      String    @default("manual")
+
+  @@index([userId, updatedAt])
+  @@index([userId, date])
+}
+
+model StudySession {
+  id              String    @id
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime
+  updatedAt       DateTime
+  deletedAt       DateTime?
+  version         Int       @default(1)
+  deviceId        String
+
+  subjectId       String?
+  topicId         String?
+  date            String
+  durationMinutes Int
+  notes           String?
+
+  @@index([userId, updatedAt])
+  @@index([userId, date])
+}
+
+model Exam {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime
+  updatedAt DateTime
+  deletedAt DateTime?
+  version   Int       @default(1)
+  deviceId  String
+
+  subjectId String?
+  title     String
+  kind      String
+  date      String
+  startTime String?
+  room      String?
+  topics    String?
+  notes     String?
+
+  @@index([userId, updatedAt])
+  @@index([userId, date])
+}
+
+model Assignment {
+  id               String    @id
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime
+  updatedAt        DateTime
+  deletedAt        DateTime?
+  version          Int       @default(1)
+  deviceId         String
+
+  subjectId        String?
+  title            String
+  description      String?
+  deadline         String
+  deadlineTime     String?
+  priority         String
+  estimatedMinutes Int?
+  status           String
+
+  @@index([userId, updatedAt])
+  @@index([userId, deadline])
+}
+
+// ---------------------------------------------------------------------------
+// Learning
+
+model Topic {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  subjectId  String?
+  parentId   String?
+  parent     Topic?    @relation("TopicTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Topic[]   @relation("TopicTree")
+  title      String
+  kind       String
+  learnedOn  String?
+  stage      Int       @default(0)
+  ease       Float     @default(1)
+  mastered   Boolean   @default(false)
+  notes      String?
+
+  revisions  RevisionSchedule[]
+
+  @@index([userId, updatedAt])
+  @@index([subjectId])
+}
+
+model RevisionSchedule {
+  id          String    @id
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime
+  updatedAt   DateTime
+  deletedAt   DateTime?
+  version     Int       @default(1)
+  deviceId    String
+
+  topicId     String
+  topic       Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  subjectId   String?
+  stage       Int
+  dueDate     String
+  status      String
+  completedAt DateTime?
+  rating      String?
+
+  @@index([userId, updatedAt])
+  @@index([userId, dueDate])
+}
+
+model Note {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime
+  updatedAt DateTime
+  deletedAt DateTime?
+  version   Int       @default(1)
+  deviceId  String
+
+  subjectId String?
+  topicId   String?
+  title     String
+  body      String
+
+  @@index([userId, updatedAt])
+}
+
+model Flashcard {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime
+  updatedAt DateTime
+  deletedAt DateTime?
+  version   Int       @default(1)
+  deviceId  String
+
+  topicId   String?
+  subjectId String?
+  front     String
+  back      String
+  stage     Int       @default(0)
+  ease      Float     @default(1)
+  dueDate   String?
+
+  @@index([userId, updatedAt])
+}
+
+model QuizAttempt {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  topicId    String?
+  subjectId  String?
+  title      String
+  difficulty String
+  total      Int
+  correct    Int
+  takenAt    DateTime
+
+  @@index([userId, updatedAt])
+}
+
+model DailyReview {
+  id           String    @id
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime
+  updatedAt    DateTime
+  deletedAt    DateTime?
+  version      Int       @default(1)
+  deviceId     String
+
+  date         String
+  wentWell     String?
+  notCompleted String?
+  carryForward String?
+  aiSummary    String?
+
+  @@index([userId, updatedAt])
+  @@index([userId, date])
+}
+
+// ---------------------------------------------------------------------------
+// Sync bookkeeping
+
+/// Monotonic change feed; clients pull everything after their cursor.
+model ChangeLog {
+  seq       BigInt   @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity    String
+  entityId  String
+  createdAt DateTime @default(now())
+
+  @@index([userId, seq])
+}
+
+/// Processed operations, so retried uploads are idempotent.
+model SyncOperation {
+  operationId String   @id
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity      String
+  entityId    String
+  deviceId    String
+  result      Json
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+/// Every concurrent write that lost last-write-wins is preserved here.
+model ConflictLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity    String
+  entityId  String
+  winner    Json
+  loser     Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// AI
+
+model AIUsage {
+  id           String   @id @default(uuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  feature      String
+  model        String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  success      Boolean
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model AIConversation {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  messages  Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Reminders & notifications
+
+model Reminder {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  title      String
+  notes      String?
+  date       String
+  time       String
+  recurrence Json
+  active     Boolean   @default(true)
+  doneDates  Json      @default("[]")
+  source     String    @default("manual")
+
+  @@index([userId, updatedAt])
+}
+
+/// Web Push endpoint for one browser/device.
+model PushSubscription {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId      String
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+  failures      Int       @default(0)
+
+  @@index([userId])
+}
+
+/// One logical notification per user (key is the planner's deterministic key).
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key         String
+  type        String
+  title       String
+  body        String
+  entityType  String?
+  entityId    String?
+  scheduledAt DateTime
+  /// scheduled (e.g. snoozed, not yet sent) | delivered
+  status      String
+  deliveredAt DateTime?
+  readAt      DateTime?
+  actionable  Boolean   @default(false)
+  payload     Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  deliveries NotificationDelivery[]
+
+  @@unique([userId, key])
+  @@index([status, scheduledAt])
+  @@index([userId, createdAt])
+}
+
+/// Which device already showed a notification (locally or via push), so no device gets it twice.
+model NotificationDelivery {
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  deviceId       String
+  channel        String
+  deliveredAt    DateTime     @default(now())
+
+  @@id([notificationId, deviceId])
+}
+
+// ---------------------------------------------------------------------------
+// AI action audit trail (synced; powers AI Activity + undo)
+
+model AiActionLog {
+  id         String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime
+  updatedAt  DateTime
+  deletedAt  DateTime?
+  version    Int       @default(1)
+  deviceId   String
+
+  action     String
+  summary    String
+  details    Json      @default("[]")
+  params     Json      @default("{}")
+  status     String
+  changes    Json      @default("[]")
+  executedAt DateTime?
+  undoneAt   DateTime?
+  error      String?
+
+  @@index([userId, updatedAt])
+}
