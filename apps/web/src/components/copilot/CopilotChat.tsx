@@ -484,7 +484,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
       {online && aiAvailable === false && <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">{aiIssue ?? 'AI is unavailable right now.'}</div>}
       {!settings.aiPermissions.enabled && (
         <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">
-          AI Pilot is off. Turn it on in <Link to="/settings#ai" className="text-accent">Settings → AI permissions</Link>.
+          AI Pilot is off. Turn it on in <Link to="/settings/ai" className="text-accent">Settings → AI permissions</Link>.
         </div>
       )}
 

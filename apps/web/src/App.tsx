@@ -130,6 +130,7 @@ export function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="assistant" element={<Assistant />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/:section" element={<SettingsPage />} />
           <Route path="review" element={<Review />} />
           <Route path="search" element={<Search />} />
           <Route path="notifications" element={<Notifications />} />

@@ -149,7 +149,7 @@ async function runSync(): Promise<void> {
     app.setSync({ phase: 'idle', lastSyncedAt: now, conflicts: app.sync.conflicts + conflicts });
     if (recovering) {
       const { notifyNow } = await import('./notifications');
-      void notifyNow('sync', '✓ All changes synchronized', conflicts ? `${conflicts} conflicting edit(s) were resolved by keeping the latest change.` : 'Your offline changes are now on every device.', '/settings');
+      void notifyNow('sync', '✓ All changes synchronized', conflicts ? `${conflicts} conflicting edit(s) were resolved by keeping the latest change.` : 'Your offline changes are now on every device.', '/settings/account');
     }
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {

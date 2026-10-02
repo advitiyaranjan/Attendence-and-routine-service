@@ -80,7 +80,7 @@ export default function Notifications() {
             <Button size="sm" variant="secondary" icon={<CheckCheck className="size-4" />} onClick={() => void markAllRead()}>
               Mark all read
             </Button>
-            <Button size="sm" variant="ghost" icon={<SettingsIcon className="size-4" />} onClick={() => navigate('/settings#notifications')}>
+            <Button size="sm" variant="ghost" icon={<SettingsIcon className="size-4" />} onClick={() => navigate('/settings/notifications')}>
               Preferences
             </Button>
           </>
