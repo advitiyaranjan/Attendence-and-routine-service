@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
 import { AlertTriangle, ArrowLeft, Bot, Loader2, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
@@ -12,6 +12,7 @@ import { toast, useApp } from '../../lib/store';
 import { useCopilot, type CopilotMessage } from '../../lib/copilot/store';
 import { ACCEPT, formatSize, MAX_FILES, MAX_TOTAL_BYTES, prepareAttachment, type AttachmentMeta, type PreparedAttachment } from '../../lib/copilot/attachments';
 import type { Proposal } from '../../lib/copilot/registry';
+import { inAppHref, linkifySettings } from '../../lib/copilot/links';
 import { QuizRunner } from '../StudyTools';
 import { Button, Checkbox, cn, Input, Select, Textarea } from '../ui';
 
@@ -372,13 +373,56 @@ function QuizLauncher({ message }: { message: CopilotMessage }) {
   );
 }
 
+/**
+ * Opens an app page from the chat. The panel covers the page, so close it
+ * while navigating. The open panel owns a history entry: replace that entry
+ * (instead of pushing on top of it) so closing doesn't step back off the new
+ * page, and Back from the new page returns to the page you were on.
+ */
+function useOpenFromChat() {
+  const navigate = useNavigate();
+  const setOpen = useCopilot((s) => s.setOpen);
+  return (to: string) => {
+    const panelEntry = (window.history.state as { copilot?: boolean } | null)?.copilot === true;
+    navigate(to, { replace: panelEntry });
+    setOpen(false);
+  };
+}
+
+/** Links in a reply: app pages (e.g. a Settings section) open in the app, others in a new tab. */
+function ReplyLink({ href = '', children }: { href?: string; children?: ReactNode }) {
+  const open = useOpenFromChat();
+  const to = inAppHref(href);
+  if (to === null) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
+        {children}
+      </a>
+    );
+  }
+  return (
+    <a
+      href={to}
+      className="font-medium text-accent hover:underline"
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        open(to);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 function AssistantMessage({ m }: { m: CopilotMessage }) {
   const choose = useCopilot((s) => s.choose);
+  const open = useOpenFromChat();
   return (
     <div className="min-w-0 max-w-[92%] animate-rise space-y-2 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm shadow-card">
       {m.content && (
         <div className="prose-sm">
-          <ReactMarkdown>{m.content}</ReactMarkdown>
+          <ReactMarkdown components={{ a: ({ href, children }) => <ReplyLink href={href}>{children}</ReplyLink> }}>{linkifySettings(m.content)}</ReactMarkdown>
         </div>
       )}
       {m.notices?.map((n, i) => (
@@ -402,7 +446,16 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
         </div>
       )}
       {m.links?.map((l) => (
-        <Link key={l.href} to={l.href} className="inline-block text-sm font-medium text-accent hover:underline">
+        <Link
+          key={l.href}
+          to={l.href}
+          className="inline-block text-sm font-medium text-accent hover:underline"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            open(l.href);
+          }}
+        >
           {l.label} →
         </Link>
       ))}
@@ -412,30 +465,20 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
 }
 
 export function CopilotChat({ compact = false, initialPrompt }: { compact?: boolean; initialPrompt?: string | null }) {
-  const { messages, busy, load, send, clear, setOpen } = useCopilot();
+  const { messages, busy, load, send, clear } = useCopilot();
   const [input, setInput] = useState('');
   const online = useApp((s) => s.online);
   const aiAvailable = useApp((s) => s.aiAvailable);
   const aiIssue = useApp((s) => s.aiIssue);
   const settings = useSettings();
   const sentInitial = useRef(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  /**
-   * The panel covers the page, so close it while opening AI activity. The open
-   * panel owns a history entry: replace that entry (instead of pushing on top
-   * of it) so closing doesn't step back off the new page, and Back from AI
-   * activity returns to the page you were on.
-   */
-  function openActivity() {
-    const panelEntry = (window.history.state as { copilot?: boolean } | null)?.copilot === true;
-    navigate('/ai-activity', { replace: panelEntry });
-    setOpen(false);
-  }
+  const openFromChat = useOpenFromChat();
+  const openActivity = () => openFromChat('/ai-activity');
   useEffect(() => {
     // The server may have been fixed or woken up since the app started.
     if (online && aiAvailable !== true) void refreshAiStatus();
