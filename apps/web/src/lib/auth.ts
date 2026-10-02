@@ -4,7 +4,7 @@ import { setAuthToken } from './platform';
 import { useSetup } from './setup';
 import { useApp, type User } from './store';
 import { resetSyncCursor, syncNow } from './sync';
-import { disablePush, ensurePushSubscription, flushDeliveryReports } from './notifications';
+import { disablePush, ensurePushSubscription, flushDeliveryReports, pullReadState } from './notifications';
 
 const USER_KEY = 'auth.user';
 const LOCAL_MODE_KEY = 'auth.localMode';
@@ -52,6 +52,7 @@ async function setSignedIn(user: User | null) {
     void syncNow();
     void ensurePushSubscription();
     void flushDeliveryReports();
+    void pullReadState();
   }
 }
 

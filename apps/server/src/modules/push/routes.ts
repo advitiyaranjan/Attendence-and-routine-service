@@ -118,7 +118,7 @@ export function pushRouter(sender: PushSender) {
     const body = parseBody(
       z.object({
         token: z.string().min(10).max(8000),
-        action: z.enum(['present', 'absent', 'cancelled', 'complete', 'done', 'snooze', 'skip']),
+        action: z.enum(['present', 'absent', 'cancelled', 'complete', 'done', 'snooze', 'skip', 'open']),
         minutes: z.number().int().min(5).max(24 * 60).optional(),
       }),
       req.body,
@@ -200,6 +200,7 @@ export function pushRouter(sender: PushSender) {
         break;
       }
       case 'skip':
+      case 'open': // tapped: just mark it read
         break;
     }
     await prisma.notification.updateMany({ where: { userId, key: claims.key }, data: { readAt: new Date() } });

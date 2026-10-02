@@ -250,6 +250,21 @@ export async function markRead(ids: string[]) {
   }
 }
 
+/** Bring read state from the server, so a notification opened on one device shows as read on the others. */
+export async function pullReadState() {
+  if (!useApp.getState().user || !navigator.onLine) return;
+  try {
+    const { notifications } = await api<{ notifications: Array<{ key: string; readAt: string | null }> }>('/api/notifications');
+    const read = new Map(notifications.filter((r) => r.readAt).map((r) => [r.key, r.readAt!]));
+    if (!read.size) return;
+    const local = await db.notifications.where('key').anyOf([...read.keys()]).toArray();
+    const changes = local.filter((r) => !r.readAt).map((r) => ({ key: r.id, changes: { readAt: read.get(r.key)! } }));
+    if (changes.length) await db.notifications.bulkUpdate(changes);
+  } catch {
+    // offline or signed out: try again next time
+  }
+}
+
 export async function markAllRead() {
   const unread = await db.notifications.filter((n) => !n.readAt).toArray();
   await markRead(unread.map((n) => n.id));
@@ -349,7 +364,8 @@ export function startNotificationScheduler() {
   const run = () => void tick().catch((e) => console.warn('notification tick failed', e));
   run();
   setInterval(run, 30_000);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && run());
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && (run(), void pullReadState()));
+  void pullReadState();
   window.addEventListener('online', () => void flushDeliveryReports());
   if (!isNative) void registerPeriodicSync();
 }

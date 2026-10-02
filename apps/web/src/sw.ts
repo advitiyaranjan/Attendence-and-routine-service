@@ -30,7 +30,7 @@ try {
 }
 
 const MAX_ACTIONS = 2;
-const SERVER_ACTIONS = new Set(['present', 'absent', 'cancelled', 'complete', 'done', 'snooze', 'skip']);
+const SERVER_ACTIONS = new Set(['present', 'absent', 'cancelled', 'complete', 'done', 'snooze', 'skip', 'open']);
 
 // --- Push from the server ----------------------------------------------------------
 self.addEventListener('push', (event) => {
@@ -104,17 +104,22 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     (async () => {
-      await db.notifications.update(item.id, { readAt: new Date().toISOString() }).catch(() => undefined);
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       const payload = { ...item, ...(item.data ?? {}) };
 
-      // 1. App open: let the page apply it locally (works offline, syncs later).
+      // 1. App open: the page applies it and marks the notification read
+      //    (locally, in the unread badge, and on the server for other devices).
       if (windows.length) {
         const client = windows[0]!;
         client.postMessage({ type: 'notification-action', action, payload });
         if (action === 'open' || action === 'start') await (client as WindowClient).focus().catch(() => undefined);
         return;
       }
+
+      // App closed: mark it read on this device now…
+      await db.notifications.update(item.id, { readAt: new Date().toISOString() }).catch(() => undefined);
+      // …and on the server (so other devices see it read too). Opening is just "read".
+      if (action === 'open' || action === 'start') void serverAction(item, 'open');
 
       // 2. App closed and online: authenticated server-side action (push notifications carry a token).
       if (action !== 'open' && action !== 'start' && (await serverAction(item, action))) {
