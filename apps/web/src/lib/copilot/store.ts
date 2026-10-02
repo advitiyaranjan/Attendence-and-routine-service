@@ -177,7 +177,8 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
           );
         }
         // Everything asked for was blocked: don't show a reply that says it was prepared or done.
-        const blocked = res.rejected.some((r) => r.reason.startsWith('Not permitted') || r.reason.startsWith('Protected: '));
+        const blocked = !!reply.notices?.length || res.rejected.some((r) => r.reason.startsWith('Not permitted') || r.reason.startsWith('Protected: '));
+        if (reply.notices) reply.notices = [...new Set(reply.notices)];
         if (blocked && !reply.proposals?.length && /\b(prepared|updated|changed|done|added|set)\b/i.test(reply.content)) reply.content = '';
         if (res.clarification && !reply.clarification) {
           reply.clarification = { question: res.clarification.question, options: res.clarification.options.map((o) => ({ label: o, send: o })) };

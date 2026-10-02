@@ -4,12 +4,12 @@
  */
 import { attendanceOverview, resolveOccurrences, rulesFrom, type AttendanceOverview, type ClassOccurrence, type ISODate, type PlannerData, type Settings } from '@student-os/core';
 import { db } from './db';
-import { defaultSettings, SETTINGS_ID } from './repo';
+import { defaultSettings, normalizeSettings, SETTINGS_ID } from './repo';
 
 const live = <T extends { deletedAt: string | null }>(rows: T[]) => rows.filter((r) => !r.deletedAt);
 
 export async function loadSettings(): Promise<Settings> {
-  return (await db.entity('settings').get(SETTINGS_ID)) ?? defaultSettings();
+  return normalizeSettings(await db.entity('settings').get(SETTINGS_ID));
 }
 
 async function loadTimetable() {

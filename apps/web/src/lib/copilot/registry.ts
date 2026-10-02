@@ -103,6 +103,15 @@ export type Prepared =
 // ---------------------------------------------------------------------------
 // Environment
 
+/** Find a subject by exact name (another confirmed card may have just created it), else create it. */
+async function ensureSubject(name: string): Promise<string> {
+  const all = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
+  const hit = all.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+  if (hit) return hit.id;
+  const palette = ['#2a78d6', '#eb6834', '#16a34a', '#9333ea', '#db2777', '#0891b2', '#ca8a04'];
+  return (await create('subject', { name, color: palette[all.length % palette.length]! })).id;
+}
+
 interface Env {
   settings: Settings;
   today: string;
@@ -429,10 +438,12 @@ const H: Record<ActionName, Handler> = {
 
   create_class: {
     async prepare(params: any, env) {
-      const subject = findSubjects(params.subject, env.subjects)[0];
-      if (!subject) return err(`You don't have a subject called "${params.subject}". Add it on the Subjects page first — I won't create one silently.`);
+      const found = findSubjects(params.subject, env.subjects)[0];
+      if (!found && !env.settings.aiPermissions.manageSubjects) return err(`You don't have a subject called "${params.subject}", and AI Pilot isn't allowed to add subjects. Add it on the Subjects page, or allow it in Settings → AI Pilot.`);
       if (params.startTime >= params.endTime) return err('The class must end after it starts.');
-      const warnings: string[] = [];
+      const subject = found ?? { id: '', name: String(params.subject).trim() };
+      const newSubject = found ? undefined : subject.name;
+      const warnings: string[] = newSubject ? [`Also adds the new subject “${newSubject}”`] : [];
       if (params.recurring) {
         const weekday = params.weekday ?? weekdayOf(params.date);
         const slots = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.active && s.weekday === weekday && (!s.validUntil || s.validUntil >= env.today));
@@ -442,8 +453,8 @@ const H: Record<ActionName, Handler> = {
           heading: subject.name,
           lines: [`Every ${WEEKDAYS[weekday]![0]!.toUpperCase()}${WEEKDAYS[weekday]!.slice(1)}`, range(params.startTime, params.endTime), ...(params.room ? [`Room ${params.room}`] : []), 'Starts from today'],
           warnings,
-          resolved: { subjectId: subject.id, weekday },
-          confirmLabel: warnings.length ? 'Add anyway' : 'Confirm',
+          resolved: { subjectId: subject.id, weekday, newSubject },
+          confirmLabel: warnings.length > (newSubject ? 1 : 0) ? 'Add anyway' : 'Confirm',
           editable: [
             { path: 'startTime', label: 'Start', type: 'time' },
             { path: 'endTime', label: 'End', type: 'time' },
@@ -457,8 +468,8 @@ const H: Record<ActionName, Handler> = {
         heading: subject.name,
         lines: [dayLabel(params.date, env.today), range(params.startTime, params.endTime), ...(params.room ? [`Room ${params.room}`] : [])],
         warnings,
-        resolved: { subjectId: subject.id },
-        confirmLabel: warnings.length ? 'Add anyway' : 'Confirm',
+        resolved: { subjectId: subject.id, newSubject },
+        confirmLabel: warnings.length > (newSubject ? 1 : 0) ? 'Add anyway' : 'Confirm',
         editable: [
           { path: 'date', label: 'Date', type: 'date' },
           { path: 'startTime', label: 'Start', type: 'time' },
@@ -469,6 +480,7 @@ const H: Record<ActionName, Handler> = {
     },
     async execute(p, env) {
       const x = p.params as any;
+      if (p.resolved.newSubject) p.resolved.subjectId = await ensureSubject(p.resolved.newSubject as string);
       if (x.recurring) {
         await create('classSchedule', { subjectId: p.resolved.subjectId as string, weekday: p.resolved.weekday as number, startTime: x.startTime, endTime: x.endTime, room: x.room, validFrom: env.today });
         return '✓ Weekly class added to your timetable';

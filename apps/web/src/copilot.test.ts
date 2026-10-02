@@ -50,9 +50,20 @@ describe('Copilot actions', () => {
     expect(r).toEqual({ kind: 'error', message: "That class hasn't started yet, so I can't record attendance for it." });
   });
 
-  it('refuses unknown subjects rather than inventing them', async () => {
-    const r = await prepareAction('create_class', { subject: 'Quantum Basket Weaving', recurring: false, date: '2026-10-03', weekday: null, startTime: '10:00', endTime: '11:00', room: null });
-    expect(r.kind).toBe('error');
+  it('adds a missing subject with the class (shown on the card) only when allowed', async () => {
+    const params = { subject: 'Quantum Basket Weaving', recurring: true, date: '2026-10-04', weekday: 0, startTime: '10:00', endTime: '11:00', room: null };
+    const perms = (await getSettings()).aiPermissions;
+    await saveSettings({ aiPermissions: { ...perms, manageSubjects: false } });
+    expect((await prepareAction('create_class', params)).kind).toBe('error');
+    await saveSettings({ aiPermissions: { ...perms, manageSubjects: true } });
+    const r = await prepareAction('create_class', params);
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { warnings: ['Also adds the new subject “Quantum Basket Weaving”'] } });
+    if (r.kind !== 'proposal') return;
+    const done = await confirmProposal(r.proposal);
+    expect((await db.entity('subject').toArray()).some((s) => s.name === 'Quantum Basket Weaving' && !s.deletedAt)).toBe(true);
+    await undoLog(done.logId!);
+    expect((await db.entity('subject').toArray()).some((s) => s.name === 'Quantum Basket Weaving' && !s.deletedAt)).toBe(false);
+    await saveSettings({ aiPermissions: perms });
   });
 
   it('marks attendance after confirmation, logs it, and undoes it', async () => {

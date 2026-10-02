@@ -183,8 +183,17 @@ export function defaultSettings(): Settings {
   });
 }
 
+/** Settings saved by older versions lack newer fields; fill them with defaults. */
+export function normalizeSettings(s: Settings | undefined): Settings {
+  if (!s) return defaultSettings();
+  const d = defaultSettings();
+  const parsed = settingsSchema.safeParse(s);
+  if (parsed.success) return parsed.data;
+  return { ...d, ...s, profile: { ...d.profile, ...s.profile }, aiPermissions: { ...d.aiPermissions, ...s.aiPermissions, access: { ...d.aiPermissions.access, ...s.aiPermissions?.access } } };
+}
+
 export async function getSettings(): Promise<Settings> {
-  return (await db.entity('settings').get(SETTINGS_ID)) ?? defaultSettings();
+  return normalizeSettings(await db.entity('settings').get(SETTINGS_ID));
 }
 
 /**

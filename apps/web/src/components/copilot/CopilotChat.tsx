@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
-import { AlertTriangle, Bot, Loader2, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Bot, Loader2, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
 import type { QuizResponse } from '@student-os/core';
 import { quiz as genQuiz, refreshAiStatus } from '../../lib/ai';
 import { errorMessage } from '../../lib/api';
@@ -675,6 +675,21 @@ export function CopilotPanel() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [setOpen]);
+  // Phone/browser back closes the panel instead of leaving the page.
+  useEffect(() => {
+    if (!open) return;
+    window.history.pushState({ ...(window.history.state as object), copilot: true }, '');
+    let popped = false;
+    const onPop = () => {
+      popped = true;
+      setOpen(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (!popped && (window.history.state as { copilot?: boolean } | null)?.copilot) window.history.back();
+    };
+  }, [open, setOpen]);
   if (!open) return null;
   return (
     <>
@@ -682,6 +697,9 @@ export function CopilotPanel() {
       <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-4 pb-3 pt-3 shadow-pop md:w-[460px]" aria-label="AI Pilot">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-semibold">
+            <button type="button" onClick={() => setOpen(false)} className="-ml-1.5 inline-flex size-9 items-center justify-center rounded-xl text-ink-2 hover:bg-surface-2 hover:text-ink" aria-label="Go back" title="Go back">
+              <ArrowLeft className="size-5" />
+            </button>
             <span className="flex size-8 items-center justify-center rounded-xl bg-accent text-accent-ink">
               <Bot className="size-4" />
             </span>

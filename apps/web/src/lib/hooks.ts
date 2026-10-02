@@ -1,9 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { todayISO, type AttendanceOverview, type ClassOccurrence, type EntityMap, type EntityName, type ISODate, type Settings, type Subject } from '@student-os/core';
 import { db } from './db';
 import { computeAttendance, occurrencesBetween } from './queries';
-import { defaultSettings, SETTINGS_ID } from './repo';
+import { defaultSettings, normalizeSettings, SETTINGS_ID } from './repo';
 
 export { computeAttendance, occurrencesBetween } from './queries';
 export { rulesFrom, thresholdsFor, trackingStart, type AttendanceOverview, type SubjectAttendance } from '@student-os/core';
@@ -15,7 +15,7 @@ export function useAll<E extends EntityName>(entity: E): EntityMap[E][] | undefi
 
 export function useSettings(): Settings {
   const s = useLiveQuery(() => db.entity('settings').get(SETTINGS_ID), []);
-  return s ?? FALLBACK_SETTINGS;
+  return useMemo(() => (s ? normalizeSettings(s) : FALLBACK_SETTINGS), [s]);
 }
 const FALLBACK_SETTINGS = defaultSettings();
 
