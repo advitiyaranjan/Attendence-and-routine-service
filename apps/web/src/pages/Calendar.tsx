@@ -1,3 +1,4 @@
+import { AskAI } from '../components/AskAI';
 import { useMemo, useState } from 'react';
 import { BookOpen, CalendarClock, CheckSquare, ChevronLeft, ChevronRight, FileText, GraduationCap, Repeat, User, Bell, Star } from 'lucide-react';
 import {
@@ -106,18 +107,28 @@ function ItemChip({ item, compact }: { item: CalItem; compact?: boolean }) {
   return (
     <div
       className={cn(
-        'flex gap-1 rounded border-l-2 bg-surface-2 px-1 text-left',
-        compact ? 'items-center truncate' : 'items-start',
-        compact ? 'py-px text-[11px]' : 'py-1 text-xs',
+        'rounded-md border-l-2 bg-surface-2 text-left',
+        compact ? 'flex items-center gap-1 truncate px-1 py-px text-[11px]' : 'px-1.5 py-1 text-xs',
         item.done && 'opacity-60',
         item.occ?.status === 'cancelled' || item.occ?.status === 'rescheduled' ? 'line-through opacity-50' : '',
       )}
       style={{ borderLeftColor: item.color }}
       title={`${label}: ${item.title}${item.start ? ` at ${formatTime12(item.start)}` : ''}`}
     >
-      <Icon className={cn('size-3 shrink-0 text-muted', !compact && 'mt-0.5')} aria-label={label} />
-      {!compact && item.start && <span className="shrink-0 text-ink-2 tabular">{formatTime12(item.start).replace(':00', '')}</span>}
-      <span className={compact ? 'truncate' : 'line-clamp-2 break-words'}>{item.title}</span>
+      {compact ? (
+        <>
+          <Icon className="size-3 shrink-0 text-muted" aria-label={label} />
+          <span className="truncate">{item.title}</span>
+        </>
+      ) : (
+        <>
+          <span className="flex items-center gap-1 text-[11px] text-ink-2 tabular">
+            <Icon className="size-3 shrink-0 text-muted" aria-label={label} />
+            {item.start ? formatTime12(item.start) : label}
+          </span>
+          <span className="mt-0.5 line-clamp-2 font-medium">{item.title}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -167,6 +178,7 @@ export default function CalendarPage() {
           </Button>
         }
       />
+      <AskAI placeholder="Plan my week…" prompts={['Plan my week', 'What classes do I have tomorrow?', 'Schedule DSA practice tonight']} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <Button size="sm" variant="secondary" onClick={() => step(-1)} aria-label="Previous">
@@ -239,9 +251,9 @@ export default function CalendarPage() {
       )}
 
       {view === 'week' && (
-        <div className="grid gap-2 md:grid-cols-7">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-7">
           {eachDay(from, to).map((d) => (
-            <div key={d} className={cn('rounded-lg border border-line bg-surface p-2', d === today && 'border-accent')}>
+            <div key={d} className={cn('min-w-0 rounded-xl border border-line bg-surface p-2 shadow-card', d === today && 'border-accent ring-1 ring-accent/30')}>
               <button
                 className={cn('mb-1.5 text-xs font-medium hover:underline', d === today ? 'text-accent' : 'text-ink-2')}
                 onClick={() => {

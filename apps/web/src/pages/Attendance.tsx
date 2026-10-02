@@ -1,3 +1,4 @@
+import { AskAI } from '../components/AskAI';
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
@@ -42,6 +43,7 @@ export default function Attendance() {
         title="Attendance"
         subtitle={`Minimum ${settings.minAttendance}% · target ${settings.targetAttendance}%. Cancelled and rescheduled classes don't count.`}
       />
+      <AskAI placeholder="Ask AI about my attendance…" prompts={['How is my attendance?', 'Which subjects are at risk?', 'Can I skip tomorrow?']} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Overall" value={fmtPct(att.overall.percent)} sub={`${att.overall.present}/${att.overall.conducted} classes`} />
@@ -52,7 +54,7 @@ export default function Attendance() {
 
       <section>
         <SectionTitle>By subject</SectionTitle>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {att.subjects
             .slice()
             .sort((a, b) => (a.summary.percent ?? 101) - (b.summary.percent ?? 101))
@@ -128,7 +130,7 @@ function WhatIf({ subjects }: { subjects: SubjectAttendance[] }) {
   return (
     <Card>
       <SectionTitle>What if?</SectionTitle>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Subject">
           <Select value={s.subject.id} onChange={(e) => setSubjectId(e.target.value)}>
             {subjects.map((x) => (

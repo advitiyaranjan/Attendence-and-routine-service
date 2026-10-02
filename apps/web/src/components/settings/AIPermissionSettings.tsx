@@ -3,9 +3,9 @@ import { saveSettings } from '../../lib/repo';
 import { Toggle } from '../ui';
 
 const GROUPS: Array<{ title: string; keys: AIPermission[]; note?: string }> = [
-  { title: 'What Copilot can read', keys: ['readCalendar', 'readAttendance', 'readTasks', 'readRevision', 'readExams', 'readNotes'], note: 'Only the parts relevant to your request are sent, never your whole database.' },
-  { title: 'What Copilot can propose to create', keys: ['createTasks', 'createEvents', 'createRevision', 'createExams', 'createReminders', 'createNotes'] },
-  { title: 'What Copilot can propose to change', keys: ['modifyTasks', 'modifyEvents', 'modifyRevision', 'modifyAttendance', 'modifyClasses', 'modifyExams'] },
+  { title: 'What AI Pilot can read', keys: ['readCalendar', 'readAttendance', 'readTasks', 'readRevision', 'readExams', 'readNotes'], note: 'Only the parts relevant to your request are sent, never your whole database.' },
+  { title: 'What AI Pilot can propose to create', keys: ['createTasks', 'createEvents', 'createRevision', 'createExams', 'createReminders', 'createNotes'] },
+  { title: 'What AI Pilot can propose to change', keys: ['modifyTasks', 'modifyEvents', 'modifyRevision', 'modifyAttendance', 'modifyClasses', 'modifyExams'] },
   { title: 'High-risk', keys: ['deleteData', 'bulkChanges'], note: 'Off by default. Even when on, every delete and bulk change shows exactly what is affected and needs confirmation.' },
 ];
 
@@ -14,11 +14,11 @@ export function AIPermissionSettings({ s }: { s: Settings }) {
   const save = (patch: Partial<AIPermissions>) => void saveSettings({ aiPermissions: { ...p, ...patch } });
   return (
     <div className="space-y-4">
-      <Toggle checked={p.enabled} onChange={(v) => save({ enabled: v })} label="Enable Study Copilot" description="When off, no data is sent to the AI." />
+      <Toggle checked={p.enabled} onChange={(v) => save({ enabled: v })} label="Enable AI Pilot" description="When off, no data is sent to the AI." />
       {p.enabled && (
         <>
           <p className="rounded-lg bg-surface-2 p-3 text-xs text-ink-2">
-            Copilot never changes your data directly. It proposes actions; you see exactly what will change and confirm, edit or cancel. Every confirmed action is listed in AI activity and can be undone.
+            AI Pilot never changes your data directly. It proposes actions; you see exactly what will change and confirm, edit or cancel. Every confirmed action is listed in AI activity and can be undone.
           </p>
           {GROUPS.map((g) => (
             <div key={g.title}>

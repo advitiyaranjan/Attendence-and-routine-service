@@ -20,8 +20,16 @@ interface AppState {
   online: boolean;
   user: User | null;
   authChecked: boolean;
+  /** Set once the first sync after start-up or sign-in has finished (or failed). */
+  firstSyncDone: boolean;
+  /** Why the server couldn't be reached at start-up, if it couldn't. */
+  serverIssue: string | null;
+  /** The student chose to use the app on this device only because the server was unreachable. */
+  localMode: boolean;
   googleClientId: string | null;
   aiAvailable: boolean | null;
+  /** Why AI is unavailable, in words the student can act on. */
+  aiIssue: string | null;
   sync: { phase: SyncPhase; lastSyncedAt: string | null; pending: number; error: string | null; conflicts: number };
   quickAdd: string | null;
   toasts: Toast[];
@@ -39,8 +47,12 @@ export const useApp = create<AppState>((set, get) => ({
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   user: null,
   authChecked: false,
+  firstSyncDone: false,
+  serverIssue: null,
+  localMode: false,
   googleClientId: null,
   aiAvailable: null,
+  aiIssue: null,
   sync: { phase: 'local', lastSyncedAt: null, pending: 0, error: null, conflicts: 0 },
   quickAdd: null,
   toasts: [],

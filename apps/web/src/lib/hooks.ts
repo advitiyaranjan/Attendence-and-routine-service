@@ -54,3 +54,16 @@ export function useSubjectMap(): Map<string, Subject> {
   const subjects = useAll('subject');
   return new Map((subjects ?? []).map((s) => [s.id, s]));
 }
+
+/** True while a CSS media query matches, e.g. useMedia('(min-width: 768px)'). */
+export function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => typeof matchMedia !== 'undefined' && matchMedia(query).matches);
+  useEffect(() => {
+    const mq = matchMedia(query);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
+}

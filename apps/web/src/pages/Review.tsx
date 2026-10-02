@@ -220,7 +220,7 @@ function Weekly() {
         <Stat label="Tasks completed" value={stats.completed.length} sub={`${stats.missed.length} missed`} />
         <Stat label="Revision" value={stats.revDue.length ? `${Math.round((stats.revDone.length / stats.revDue.length) * 100)}%` : '—'} sub={`${stats.revDone.length}/${stats.revDue.length}`} />
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <SectionTitle>Subjects studied</SectionTitle>
           <p className="text-sm">{stats.subjectsStudied.join(', ') || 'None logged'}</p>

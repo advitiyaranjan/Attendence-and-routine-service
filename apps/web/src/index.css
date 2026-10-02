@@ -1,11 +1,27 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Design tokens. Status colours follow the data-viz reference palette and are
    always paired with an icon + label, never colour alone. */
 @theme {
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05);
+  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
+
+  --animate-rise: rise 0.22s ease-out both;
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 
   --color-page: var(--page);
   --color-surface: var(--surface);
@@ -29,16 +45,16 @@
 
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
+  --page: #f5f6f8;
   --surface: #ffffff;
-  --surface-2: #f3f3f0;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #7a7873;
-  --line: #e4e3dc;
+  --surface-2: #f1f2f5;
+  --ink: #0f1115;
+  --ink-2: #4a4f5c;
+  --muted: #7c8191;
+  --line: #e6e8ec;
   --accent: #4f46e5;
   --accent-ink: #ffffff;
-  --accent-soft: #eef0ff;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, white);
   --good-ink: #006300;
   --critical-ink: #b42323;
   --warning-ink: #8a5a00;
@@ -46,16 +62,16 @@
 
 .dark {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --surface-2: #232321;
-  --ink: #ffffff;
-  --ink-2: #c3c2b7;
-  --muted: #8f8d86;
-  --line: #2f2f2c;
+  --page: #0b0c0f;
+  --surface: #15171c;
+  --surface-2: #1d2027;
+  --ink: #f4f5f7;
+  --ink-2: #b4b8c3;
+  --muted: #858b99;
+  --line: #272b34;
   --accent: #818cf8;
-  --accent-ink: #0b0b0b;
-  --accent-soft: #23253f;
+  --accent-ink: #0b0c0f;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, #15171c);
   --good-ink: #3ccf3c;
   --critical-ink: #ff8a8a;
   --warning-ink: #fab219;
@@ -70,6 +86,16 @@ body {
 body {
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+  font-feature-settings: 'cv11', 'ss01';
+  text-rendering: optimizeLegibility;
+}
+
+/* Hide scrollbars on horizontal chip rows while keeping them scrollable. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 :focus-visible {

@@ -14,6 +14,8 @@ export class ApiError extends Error {
   }
 }
 
+const NO_API = "The Student OS server isn't reachable at this address, so sign-in, sync and AI are unavailable. Your data is safe on this device.";
+
 export async function api<T>(path: string, init: { method?: string; body?: unknown; form?: FormData; signal?: AbortSignal } = {}): Promise<T> {
   const base = apiBase();
   if (isNative && !base) {
@@ -43,8 +45,12 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
+    if (!e && res.status === 413) throw new ApiError('That file is too large to upload. Try a smaller image or PDF (under 4 MB).', 'too_large', 413);
+    if (!e && (res.status === 404 || res.status === 405)) throw new ApiError(NO_API, 'no_api', res.status);
     throw new ApiError(e?.message ?? 'Something went wrong. Please try again.', e?.code ?? 'error', res.status);
   }
+  // A static host without the API (e.g. only the web app deployed) answers /api/* with the HTML page.
+  if (data === null) throw new ApiError(NO_API, 'no_api', res.status);
   return data as T;
 }
 

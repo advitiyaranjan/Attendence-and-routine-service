@@ -61,7 +61,7 @@ export default function Classes() {
           }
         />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {days.map((d) => {
             const list = schedules.filter((s) => s.weekday === d).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
             return (

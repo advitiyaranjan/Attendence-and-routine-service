@@ -31,7 +31,7 @@ export default function Notes() {
           </Button>
         }
       />
-      <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[16rem_1fr]">
         <div className={cn('space-y-2', open && 'hidden md:block')}>
           <Input placeholder="Filter notes" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Filter notes" />
           {filtered.length === 0 && <p className="p-2 text-sm text-ink-2">No notes.</p>}
@@ -134,7 +134,7 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
           <Trash2 className="size-4" />
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Subject">
           <SubjectSelect value={note.subjectId} onChange={(v) => void update('note', note.id, { subjectId: v })} />
         </Field>

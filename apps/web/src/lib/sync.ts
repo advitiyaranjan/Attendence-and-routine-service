@@ -110,6 +110,7 @@ async function runSync(): Promise<void> {
   const app = useApp.getState();
   if (!app.user) {
     app.setSync({ phase: 'local' });
+    useApp.setState({ firstSyncDone: true });
     return;
   }
   if (!navigator.onLine) {
@@ -161,6 +162,7 @@ async function runSync(): Promise<void> {
     app.setSync({ phase: navigator.onLine ? 'error' : 'offline', error: message });
     scheduleRetry();
   } finally {
+    useApp.setState({ firstSyncDone: true });
     await refreshPending();
   }
 }

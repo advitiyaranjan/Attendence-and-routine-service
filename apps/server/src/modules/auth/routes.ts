@@ -10,15 +10,17 @@ import { clearSession, issueSession } from '../../middleware/auth';
 
 export const authRouter = Router();
 
-authRouter.use(
-  rateLimit({
-    windowMs: 15 * 60_000,
-    limit: 30,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    message: { error: { code: 'rate_limited', message: 'Too many sign-in attempts. Please wait a few minutes and try again.' } },
-  }),
-);
+/**
+ * Brute-force protection for credential endpoints only. GET /me runs on every
+ * app start, so limiting it would lock out students who simply reload often.
+ */
+const signInLimit = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: { code: 'rate_limited', message: 'Too many sign-in attempts. Please wait a few minutes and try again.' } },
+});
 
 // Compared against when the email doesn't exist, so response timing doesn't reveal accounts.
 const DUMMY_HASH = bcrypt.hashSync('timing-equaliser', 12);
@@ -33,7 +35,7 @@ function publicUser(u: { id: string; email: string | null; name: string | null; 
   return { id: u.id, email: u.email, name: u.name, hasGoogle: !!u.googleId };
 }
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', signInLimit, async (req, res) => {
   const { email, password, name } = parseBody(credentials, req.body);
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) throw new HttpError(409, 'email_taken', 'An account with this email already exists.');
@@ -44,7 +46,7 @@ authRouter.post('/register', async (req, res) => {
   res.status(201).json({ user: publicUser(user), token });
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', signInLimit, async (req, res) => {
   const { email, password } = parseBody(credentials.pick({ email: true, password: true }), req.body);
   const user = await prisma.user.findUnique({ where: { email } });
   const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
@@ -57,7 +59,7 @@ authRouter.post('/login', async (req, res) => {
 const googleClient = env.GOOGLE_CLIENT_ID ? new OAuth2Client(env.GOOGLE_CLIENT_ID) : null;
 
 /** Google Identity Services: the browser obtains an ID token, we verify it here. */
-authRouter.post('/google', async (req, res) => {
+authRouter.post('/google', signInLimit, async (req, res) => {
   if (!googleClient || !env.GOOGLE_CLIENT_ID) throw new HttpError(501, 'google_disabled', 'Google sign-in is not configured.');
   const { credential } = parseBody(z.object({ credential: z.string().min(10).max(5000) }), req.body);
   let payload;

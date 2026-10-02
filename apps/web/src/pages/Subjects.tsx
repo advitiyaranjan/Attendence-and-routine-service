@@ -4,7 +4,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { fmtPct, type Subject } from '@student-os/core';
 import { SubjectForm } from '../components/forms';
 import { Button, Card, EmptyState, Meter, Modal, PageHeader, RiskPill, riskColor, SubjectDot } from '../components/ui';
-import { useAll, useAttendance, useSettings } from '../lib/hooks';
+import { useAll, useAttendance, useSettings, useToday } from '../lib/hooks';
 import { remove } from '../lib/repo';
 import { toast } from '../lib/store';
 
@@ -17,6 +17,8 @@ export default function Subjects() {
   const exams = useAll('exam') ?? [];
   const assignments = useAll('assignment') ?? [];
   const notes = useAll('note') ?? [];
+  const revisions = useAll('revisionSchedule') ?? [];
+  const today = useToday();
   const [editing, setEditing] = useState<Subject | 'new' | null>(null);
 
   async function del(s: Subject) {
@@ -29,6 +31,7 @@ export default function Subjects() {
     <div className="space-y-5">
       <PageHeader
         title="Subjects"
+        subtitle="Each subject's classes, attendance, topics, work and exams in one place."
         actions={
           <Button variant="primary" icon={<Plus className="size-4" />} onClick={() => setEditing('new')}>
             Subject
@@ -36,7 +39,7 @@ export default function Subjects() {
         }
       />
       {subjects.length === 0 && <EmptyState title="No subjects yet" body="Subjects are created automatically when you import your timetable." />}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {subjects
           .slice()
           .sort((a, b) => a.name.localeCompare(b.name))
@@ -82,20 +85,31 @@ export default function Subjects() {
                     </div>
                   </div>
                 )}
-                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
-                  <Link to="/revision" className="hover:text-ink">
-                    {count(topics)} topics
-                  </Link>
-                  <Link to="/tasks" className="hover:text-ink">
-                    {tasks.filter((t) => t.subjectId === s.id && t.status !== 'done').length} open tasks
-                  </Link>
-                  <Link to="/deadlines" className="hover:text-ink">
-                    {count(exams)} exams · {count(assignments)} assignments
-                  </Link>
-                  <Link to="/notes" className="hover:text-ink">
-                    {count(notes)} notes
-                  </Link>
+                <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+                  {[
+                    { label: 'Classes', value: summary?.conducted ?? 0, to: '/attendance' },
+                    { label: 'Present', value: summary?.present ?? 0, to: '/attendance' },
+                    { label: 'Topics', value: count(topics), to: '/revision' },
+                    { label: 'Revisions', value: revisions.filter((r) => r.subjectId === s.id && r.status === 'pending').length, to: '/revision' },
+                    { label: 'Tasks', value: tasks.filter((t) => t.subjectId === s.id && t.status !== 'done').length, to: '/todos' },
+                    { label: 'Assignments', value: assignments.filter((a) => a.subjectId === s.id && a.status !== 'submitted').length, to: '/deadlines' },
+                    { label: 'Exams', value: count(exams), to: '/deadlines' },
+                    { label: 'Notes', value: count(notes), to: '/notes' },
+                  ].map((x) => (
+                    <Link key={x.label} to={x.to} className="rounded-xl bg-surface-2 px-1 py-2 transition-colors hover:bg-accent-soft">
+                      <div className="text-base font-semibold tabular">{x.value}</div>
+                      <div className="truncate text-[11px] text-muted">{x.label}</div>
+                    </Link>
+                  ))}
                 </div>
+                {(() => {
+                  const next = exams.filter((e) => e.subjectId === s.id && e.date >= today).sort((a, b) => a.date.localeCompare(b.date))[0];
+                  return next ? (
+                    <p className="mt-3 text-xs text-ink-2">
+                      Upcoming exam: <strong>{next.title}</strong> on {new Date(`${next.date}T12:00:00`).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}
+                    </p>
+                  ) : null;
+                })()}
               </Card>
             );
           })}

@@ -121,7 +121,7 @@ export default function Reminders() {
           </Button>
         }
       />
-      {reminders.length === 0 && <EmptyState icon={<Bell className="size-6" />} title="No reminders" body='Create one here, or tell Copilot: "Remind me every Sunday at 8 PM to plan my week."' />}
+      {reminders.length === 0 && <EmptyState icon={<Bell className="size-6" />} title="No reminders" body='Create one here, or tell AI Pilot: "Remind me every Sunday at 8 PM to plan my week."' />}
       <Card className="divide-y divide-line p-0">
         {reminders.map(({ r, next }) => (
           <div key={r.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -132,7 +132,7 @@ export default function Reminders() {
                   {describeRecurrence(r.recurrence, r.date)} · {formatTime12(r.time)}
                 </span>
                 {next ? <Badge>Next: {next === today ? 'today' : next}</Badge> : <Badge>Finished</Badge>}
-                {r.source === 'ai' && <span className="text-muted">via Copilot</span>}
+                {r.source === 'ai' && <span className="text-muted">via AI Pilot</span>}
               </div>
             </div>
             <Toggle checked={r.active} onChange={(v) => void update('reminder', r.id, { active: v })} label="Active" />

@@ -1,23 +1,25 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Route, Routes, useNavigate, useSearchParams } from 'react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { NotificationActionId } from '@student-os/core';
 import { Layout, MorePage } from './components/Layout';
-import { Spinner } from './components/ui';
+import { Spinner, Splash } from './components/ui';
 import { performNotificationAction, type ActionPayload } from './lib/notifications';
 import { db } from './lib/db';
 import { SETTINGS_ID } from './lib/repo';
 import { useApp } from './lib/store';
 import { applyTheme } from './lib/theme';
-import { aiStatus } from './lib/ai';
+import { refreshAiStatus } from './lib/ai';
 import { Dashboard } from './pages/Dashboard';
-import { Onboarding } from './pages/Onboarding';
+import { LoginPage } from './pages/Login';
+import { Setup } from './pages/setup/Setup';
 
 const Today = lazy(() => import('./pages/Today'));
 const CalendarPage = lazy(() => import('./pages/Calendar'));
 const Classes = lazy(() => import('./pages/Classes'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const Tasks = lazy(() => import('./pages/Tasks'));
+const Todos = lazy(() => import('./pages/Todos'));
 const Revision = lazy(() => import('./pages/Revision'));
 const Deadlines = lazy(() => import('./pages/Deadlines'));
 const Subjects = lazy(() => import('./pages/Subjects'));
@@ -72,7 +74,22 @@ function useNotificationActions() {
 export function App() {
   const settings = useLiveQuery(async () => (await db.entity('settings').get(SETTINGS_ID)) ?? null, []);
   const online = useApp((s) => s.online);
+  const user = useApp((s) => s.user);
+  const authChecked = useApp((s) => s.authChecked);
+  const localMode = useApp((s) => s.localMode);
+  const firstSyncDone = useApp((s) => s.firstSyncDone);
+  const serverIssue = useApp((s) => s.serverIssue);
+  const [gaveUpWaiting, setGaveUpWaiting] = useState(false);
   useNotificationActions();
+
+  // A returning student signing in on a new device: their settings arrive with the
+  // first sync, so wait for it before deciding they're new (but never forever).
+  const waitingForAccount = !!user && !settings?.onboarded && !firstSyncDone && online && !serverIssue && !gaveUpWaiting;
+  useEffect(() => {
+    if (!waitingForAccount) return;
+    const t = setTimeout(() => setGaveUpWaiting(true), 10_000);
+    return () => clearTimeout(t);
+  }, [waitingForAccount]);
 
   useEffect(() => {
     if (settings !== undefined) applyTheme(settings?.theme ?? 'system', settings?.accent ?? 'indigo');
@@ -87,13 +104,13 @@ export function App() {
 
   useEffect(() => {
     if (!online) return;
-    aiStatus()
-      .then((s) => useApp.setState({ aiAvailable: s.available }))
-      .catch(() => useApp.setState({ aiAvailable: false }));
+    void refreshAiStatus();
   }, [online]);
 
-  if (settings === undefined) return <Spinner />;
-  if (!settings?.onboarded) return <Onboarding />;
+  if (settings === undefined) return <Splash />;
+  if (!user && !localMode) return authChecked ? <LoginPage /> : <Splash />;
+  if (waitingForAccount) return <Splash label="Loading your workspace" />;
+  if (!settings?.onboarded) return <Setup />;
 
   return (
     <Suspense fallback={<Spinner />}>
@@ -104,6 +121,7 @@ export function App() {
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="classes" element={<Classes />} />
           <Route path="attendance" element={<Attendance />} />
+          <Route path="todos" element={<Todos />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="revision" element={<Revision />} />
           <Route path="deadlines" element={<Deadlines />} />

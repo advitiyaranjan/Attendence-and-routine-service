@@ -118,7 +118,7 @@ export default function Analytics() {
         <Stat label="Task streak" value={`${computeStreak(taskDates, today)}d`} sub={`best ${longestStreak(taskDates)}d`} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <SectionTitle>Study hours, last 7 days</SectionTitle>
           <BarChart data={studyChart} format={(v) => `${v.toFixed(1)} h`} label="Study hours per day for the last 7 days" />
@@ -149,7 +149,7 @@ export default function Analytics() {
         </div>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <SectionTitle>Activity, last 12 weeks</SectionTitle>
           <div className="flex gap-1 overflow-x-auto" role="img" aria-label="Daily activity heatmap for the last 12 weeks">

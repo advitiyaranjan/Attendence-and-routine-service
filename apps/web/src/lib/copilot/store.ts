@@ -129,7 +129,7 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
 
       const settings = await loadSettings();
       if (!settings.aiPermissions.enabled) {
-        append({ ...reply, content: 'Study Copilot is turned off in Settings → AI permissions.' });
+        append({ ...reply, content: 'AI Pilot is turned off in Settings → AI permissions.' });
         return;
       }
       if (!navigator.onLine) {
@@ -209,7 +209,7 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
       const edited = editParams(p.action, p.params, path, value, type);
       if (!edited.ok) return edited.error;
       const prepared = await prepareAction(p.action, edited.params);
-      if (prepared.kind !== 'proposal') return prepared.kind === 'error' ? prepared.message : 'That change needs clarification — ask Copilot instead.';
+      if (prepared.kind !== 'proposal') return prepared.kind === 'error' ? prepared.message : 'That change needs clarification. Ask AI Pilot instead.';
       patchProposal(messageId, proposalId, () => ({ ...prepared.proposal, id: p.id }));
       return null;
     },

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { errorMessage } from '../lib/api';
 import { login, loginWithGoogle, register } from '../lib/auth';
 import { isNative } from '../lib/platform';
 import { toast, useApp } from '../lib/store';
-import { ServerAddress } from './ServerAddress';
-import { Button, Field, Input, Tabs } from './ui';
+import { Button, Field, Input } from './ui';
 
 declare global {
   interface Window {
@@ -19,12 +19,14 @@ declare global {
   }
 }
 
-function GoogleButton({ clientId, onSuccess }: { clientId: string; onSuccess: () => void }) {
+/** Google Identity Services button ("Continue with Google"), sized to its container. */
+export function GoogleButton({ clientId, onSuccess }: { clientId: string; onSuccess: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let cancelled = false;
     const render = () => {
-      if (cancelled || !window.google || !ref.current) return;
+      const el = ref.current;
+      if (cancelled || !window.google || !el) return;
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: async ({ credential }) => {
@@ -36,7 +38,15 @@ function GoogleButton({ clientId, onSuccess }: { clientId: string; onSuccess: ()
           }
         },
       });
-      window.google.accounts.id.renderButton(ref.current, { theme: 'outline', size: 'large', width: 280, text: 'continue_with' });
+      const dark = document.documentElement.classList.contains('dark');
+      window.google.accounts.id.renderButton(el, {
+        theme: dark ? 'filled_black' : 'outline',
+        size: 'large',
+        shape: 'rectangular',
+        text: 'continue_with',
+        logo_alignment: 'center',
+        width: Math.min(400, Math.max(200, el.clientWidth)),
+      });
     };
     if (window.google) render();
     else {
@@ -50,14 +60,22 @@ function GoogleButton({ clientId, onSuccess }: { clientId: string; onSuccess: ()
       cancelled = true;
     };
   }, [clientId, onSuccess]);
-  return <div ref={ref} className="flex justify-center" />;
+  return <div ref={ref} className="flex min-h-11 w-full justify-center" />;
 }
 
-export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+/**
+ * Sign in / sign up with Google or email + password. Nothing else is asked here;
+ * academic details are collected later, only when needed.
+ */
+export type AuthMode = 'login' | 'register';
+
+export function AuthForm({ onSuccess, mode: controlled, onModeChange }: { onSuccess: () => void; mode?: AuthMode; onModeChange?: (m: AuthMode) => void }) {
+  const [own, setOwn] = useState<AuthMode>('login');
+  const mode = controlled ?? own;
+  const setMode = (m: AuthMode) => (onModeChange ? onModeChange(m) : setOwn(m));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const googleClientId = useApp((s) => s.googleClientId);
@@ -69,8 +87,7 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
     setError(null);
     try {
       if (mode === 'login') await login(email, password);
-      else await register(email, password, name || undefined);
-      toast('Signed in. Syncing your data…', 'success');
+      else await register(email, password);
       onSuccess();
     } catch (err) {
       setError(errorMessage(err));
@@ -79,52 +96,66 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
     }
   }
 
-  if (!online) return <p className="text-sm text-ink-2">Signing in needs an internet connection. You can keep using the app locally.</p>;
+  if (!online) return <p className="rounded-xl bg-surface-2 p-3 text-sm text-ink-2">Signing in needs an internet connection.</p>;
 
   return (
     <div className="space-y-4">
-      {isNative && <ServerAddress />}
-      <Tabs
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: 'login', label: 'Sign in' },
-          { value: 'register', label: 'Create account' },
-        ]}
-      />
+      {googleClientId && !isNative && (
+        <>
+          <GoogleButton clientId={googleClientId} onSuccess={onSuccess} />
+          <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-muted">
+            <div className="h-px flex-1 bg-line" /> or <div className="h-px flex-1 bg-line" />
+          </div>
+        </>
+      )}
       <form onSubmit={submit} className="space-y-3">
-        {mode === 'register' && (
-          <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-          </Field>
-        )}
         <Field label="Email">
-          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="Enter your email" className="h-11" />
         </Field>
         <Field label="Password" hint={mode === 'register' ? 'At least 8 characters' : undefined}>
-          <Input
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
+          <div className="relative">
+            <Input
+              type={show ? 'text' : 'password'}
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              placeholder={mode === 'login' ? 'Enter your password' : 'Create a password'}
+              className="h-11 pr-11"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((v) => !v)}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted hover:text-ink"
+              aria-label={show ? 'Hide password' : 'Show password'}
+            >
+              {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
         </Field>
-        {error && <p className="text-sm text-critical-ink">{error}</p>}
-        <Button type="submit" variant="primary" loading={busy} className="w-full">
+        {error && (
+          <p className="rounded-xl bg-critical/10 px-3 py-2 text-sm text-critical-ink" role="alert">
+            {error}
+          </p>
+        )}
+        <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full">
           {mode === 'login' ? 'Sign in' : 'Create account'}
         </Button>
       </form>
-      {googleClientId && !isNative && (
-        <>
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <div className="h-px flex-1 bg-line" /> or <div className="h-px flex-1 bg-line" />
-          </div>
-          <GoogleButton clientId={googleClientId} onSuccess={onSuccess} />
-        </>
-      )}
-      <p className="text-xs text-muted">Your local data stays on this device and is uploaded to your account when you sign in.</p>
+      <p className="text-center text-sm text-ink-2">
+        {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+        <button
+          type="button"
+          className="font-semibold text-accent hover:underline"
+          onClick={() => {
+            setMode(mode === 'login' ? 'register' : 'login');
+            setError(null);
+          }}
+        >
+          {mode === 'login' ? 'Sign up' : 'Sign in'}
+        </button>
+      </p>
     </div>
   );
 }

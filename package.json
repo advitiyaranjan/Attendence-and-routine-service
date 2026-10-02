@@ -2,6 +2,9 @@
   "name": "student-os",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -12,10 +15,12 @@
     "dev:server": "npm run dev -w @student-os/server",
     "build": "npm run build -w @student-os/server && npm run build -w @student-os/web",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "vercel-build": "node scripts/vercel-build.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
+    "esbuild": "^0.27.7",
     "typescript": "^7.0.2"
   },
   "allowScripts": {

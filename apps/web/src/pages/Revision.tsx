@@ -1,3 +1,4 @@
+import { AskAI } from '../components/AskAI';
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { addDays, diffDays, RATING_LABEL, type RecallRating, type RevisionSchedule, type Topic } from '@student-os/core';
@@ -96,11 +97,13 @@ export default function Revision() {
           </Button>
         }
       />
+      <AskAI placeholder="Explain this topic…" prompts={['What should I revise today?', 'Quiz me on my weakest topic', 'I learned a new topic today']} />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Due today" value={dueToday.length} />
         <Stat label="Overdue" value={overdue.length} />
-        <Stat label="Upcoming (30 days)" value={upcoming.length} />
+        <Stat label="Upcoming" value={upcoming.length} sub="Next 30 days" />
+        <Stat label="Recently learned" value={recent.length} sub="Last 7 days" />
         <Stat label="Mastered" value={mastered.length} sub={`${topics.length} topics total`} />
       </div>
 
@@ -149,7 +152,7 @@ export default function Revision() {
       {tab === 'topics' && <TopicTree topics={topics} revisions={pending} onOpen={setOpenTopic} />}
 
       {tab === 'strength' && (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Card>
             <h3 className="mb-2 text-sm font-semibold">Weak topics</h3>
             <p className="mb-2 text-xs text-muted">Topics you've forgotten or only partly remembered.</p>
