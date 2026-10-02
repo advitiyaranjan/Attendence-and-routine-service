@@ -5,8 +5,8 @@ import { Toggle } from '../ui';
 const GROUPS: Array<{ title: string; keys: AIPermission[]; note?: string }> = [
   { title: 'What AI Pilot can read', keys: ['readCalendar', 'readAttendance', 'readTasks', 'readRevision', 'readExams', 'readNotes'], note: 'Only the parts relevant to your request are sent, never your whole database.' },
   { title: 'What AI Pilot can propose to create', keys: ['createTasks', 'createEvents', 'createRevision', 'createExams', 'createReminders', 'createNotes'] },
-  { title: 'What AI Pilot can propose to change', keys: ['modifyTasks', 'modifyEvents', 'modifyRevision', 'modifyAttendance', 'modifyClasses', 'modifyExams'] },
-  { title: 'High-risk', keys: ['deleteData', 'bulkChanges'], note: 'Off by default. Even when on, every delete and bulk change shows exactly what is affected and needs confirmation.' },
+  { title: 'What AI Pilot can propose to change', keys: ['manageSubjects', 'modifyTasks', 'modifyEvents', 'modifyRevision', 'modifyAttendance', 'modifyClasses', 'modifyExams', 'modifySettings'] },
+  { title: 'High-risk', keys: ['deleteData', 'bulkChanges'], note: 'Every delete and bulk change shows exactly what is affected, needs your confirmation, and can be undone from AI activity.' },
 ];
 
 export function AIPermissionSettings({ s }: { s: Settings }) {

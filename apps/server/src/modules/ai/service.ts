@@ -1,5 +1,6 @@
 import type { Part } from '@google/genai';
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import {
   actionCatalog,
   commandResponseSchema,
@@ -32,6 +33,44 @@ const EXCEL_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ]);
+
+/** Turn an uploaded file into Gemini parts: images/PDF inline, documents as extracted text. */
+export async function attachmentParts(file: UploadedFile): Promise<Part[]> {
+  const name = file.originalname.toLowerCase();
+  const header: Part = { text: `ATTACHMENT "${file.originalname}":` };
+  if (IMAGE_TYPES.has(file.mimetype) || file.mimetype === 'application/pdf' || name.endsWith('.pdf')) {
+    const mimeType = file.mimetype === 'application/octet-stream' ? 'application/pdf' : file.mimetype;
+    return [header, { inlineData: { mimeType, data: file.buffer.toString('base64') } }];
+  }
+  if (EXCEL_TYPES.has(file.mimetype) || name.endsWith('.xlsx')) return [header, { text: await excelToText(file.buffer) }];
+  if (name.endsWith('.docx') || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return [header, { text: await docxToText(file.buffer) }];
+  }
+  if (file.mimetype.startsWith('text/') || /\.(txt|md|csv|tsv|json)$/.test(name)) {
+    return [header, { text: file.buffer.toString('utf8').slice(0, 100_000) }];
+  }
+  throw new HttpError(415, 'unsupported_file', `"${file.originalname}" isn't supported. Attach images, PDFs, Word, Excel or text files.`);
+}
+
+/** Plain text from a .docx (paragraphs and tabs), without extra dependencies beyond JSZip. */
+async function docxToText(buffer: Buffer): Promise<string> {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = (await zip.file('word/document.xml')?.async('string')) ?? '';
+    return xml
+      .replace(/<\/w:p>/g, '\n')
+      .replace(/<w:tab\/>/g, '\t')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .slice(0, 100_000);
+  } catch {
+    throw new HttpError(400, 'invalid_file', "That Word file couldn't be read. Try saving it as PDF.");
+  }
+}
 
 function contextPart(context: unknown): Part {
   return { text: `CONTEXT:\n${JSON.stringify(context ?? {})}` };
@@ -72,7 +111,8 @@ export class AIService {
    * Natural-language command → validated intents. Only actions the student
    * permits are offered to the model, and the output is filtered again.
    */
-  async command(userId: string | null, messages: ChatMessage[], context: unknown, today: string, permissions: Partial<AIPermissions>) {
+  async command(userId: string | null, messages: ChatMessage[], context: unknown, today: string, permissions: Partial<AIPermissions>, files: UploadedFile[] = []) {
+    const attachments = (await Promise.all(files.map(attachmentParts))).flat();
     const transcript = messages
       .slice(-16)
       .map((m) => `${m.role === 'user' ? 'Student' : 'AI Pilot'}: ${m.content}`)
@@ -81,7 +121,13 @@ export class AIService {
       feature: 'command',
       userId,
       system: P.commandSystem(today, WEEKDAYS[weekdayOf(today)]!, actionCatalog(permissions)),
-      parts: [contextPart(context), { text: `CONVERSATION:\n${transcript}\n\nRespond to the student's last message.` }],
+      parts: [
+        contextPart(context),
+        ...attachments,
+        {
+          text: `CONVERSATION:\n${transcript}\n\n${files.length ? `The student attached ${files.length} file(s) above with their last message. ` : ''}Respond to the student's last message.`,
+        },
+      ],
       schema: commandResponseSchema,
     });
     const { intents, rejected } = validateIntents(raw.actions, permissions);

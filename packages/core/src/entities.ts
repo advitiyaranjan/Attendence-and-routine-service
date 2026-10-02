@@ -303,8 +303,11 @@ export const aiPermissionsSchema = z.object({
   modifyAttendance: z.boolean().default(true),
   modifyClasses: z.boolean().default(true),
   modifyExams: z.boolean().default(true),
-  deleteData: z.boolean().default(false),
-  bulkChanges: z.boolean().default(false),
+  manageSubjects: z.boolean().default(true),
+  modifySettings: z.boolean().default(true),
+  /** Everything still needs the student's confirmation; these only control what AI Pilot may propose. */
+  deleteData: z.boolean().default(true),
+  bulkChanges: z.boolean().default(true),
   /** Read-only questions are answered without a confirmation step. */
   instantReadOnly: z.boolean().default(true),
 });

@@ -10,6 +10,7 @@ import { create as createStore } from 'zustand';
 import { v4 as uuid } from 'uuid';
 import { actionAllowed, PERMISSION_LABEL, todayISO, type AIIntent, type ActionName } from '@student-os/core';
 import { api, ApiError } from '../api';
+import type { AttachmentMeta, PreparedAttachment } from './attachments';
 import { kvGet, kvSet } from '../db';
 import { loadSettings } from '../queries';
 import { buildCommandContext } from './context';
@@ -25,6 +26,8 @@ export interface CopilotMessage {
   clarification?: { question: string; options: ClarifyOption[]; answered?: boolean };
   notices?: string[];
   links?: Array<{ label: string; href: string }>;
+  /** Files the student attached (metadata + image thumbnails; the files themselves aren't stored). */
+  attachments?: AttachmentMeta[];
   quiz?: { topic: string; count: 5 | 10 | 20; difficulty: 'easy' | 'medium' | 'hard' | 'mixed'; autoStart: boolean; started: boolean };
 }
 
@@ -42,7 +45,7 @@ interface CopilotState {
   loaded: boolean;
   load(): Promise<void>;
   setOpen(open: boolean): void;
-  send(text: string): Promise<void>;
+  send(text: string, files?: PreparedAttachment[]): Promise<void>;
   choose(messageId: string, option: ClarifyOption): Promise<void>;
   confirm(messageId: string, proposalId: string): Promise<void>;
   cancel(messageId: string, proposalId: string): Promise<void>;
@@ -59,6 +62,7 @@ const HISTORY_KEY = 'copilot.history';
 function transcript(messages: CopilotMessage[]) {
   return messages.slice(-16).map((m) => {
     let content = m.content;
+    if (m.attachments?.length) content += `\n[attached: ${m.attachments.map((a) => a.name).join(', ')}]`;
     for (const p of m.proposals ?? []) {
       if (p.status === 'pending') content += `\n[pending proposal: ${p.action} ${JSON.stringify(p.params)}]`;
       else if (p.status === 'confirmed') content += `\n[done: ${p.action} — ${p.result ?? ''}]`;
@@ -119,11 +123,17 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
       set({ open });
     },
 
-    async send(text) {
-      const content = text.trim();
+    async send(text, files = []) {
+      const content = text.trim() || (files.length ? 'Please look at the attached file(s).' : '');
       if (!content || get().busy) return;
       await get().load();
-      const user: CopilotMessage = { id: uuid(), role: 'user', content, createdAt: new Date().toISOString() };
+      const user: CopilotMessage = {
+        id: uuid(),
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+        ...(files.length ? { attachments: files.map((f) => f.meta) } : {}),
+      };
       append(user);
       const reply: CopilotMessage = { id: uuid(), role: 'assistant', content: '', createdAt: new Date().toISOString() };
 
@@ -139,9 +149,14 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
 
       set({ busy: true });
       try {
-        const res = await api<CommandResponse>('/api/ai/command', {
-          body: { messages: transcript(get().messages), context: await buildCommandContext(), today: todayISO(), permissions: settings.aiPermissions },
-        });
+        const payload = { messages: transcript(get().messages), context: await buildCommandContext(), today: todayISO(), permissions: settings.aiPermissions };
+        let form: FormData | undefined;
+        if (files.length) {
+          form = new FormData();
+          form.append('payload', JSON.stringify(payload));
+          for (const f of files) form.append('files', f.file, f.file.name);
+        }
+        const res = await api<CommandResponse>('/api/ai/command', form ? { form } : { body: payload });
         reply.content = res.reply;
         for (const intent of res.intents) {
           const { ok, missing } = actionAllowed(intent.action, settings.aiPermissions);

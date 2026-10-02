@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
-import { AlertTriangle, Bot, Check, History, Mic, MicOff, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Bot, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
 import type { QuizResponse } from '@student-os/core';
 import { quiz as genQuiz, refreshAiStatus } from '../../lib/ai';
 import { errorMessage } from '../../lib/api';
@@ -10,6 +10,7 @@ import { useSettings } from '../../lib/hooks';
 import { isNative } from '../../lib/platform';
 import { toast, useApp } from '../../lib/store';
 import { useCopilot, type CopilotMessage } from '../../lib/copilot/store';
+import { ACCEPT, formatSize, MAX_FILES, MAX_TOTAL_BYTES, prepareAttachment, type AttachmentMeta, type PreparedAttachment } from '../../lib/copilot/attachments';
 import type { Proposal } from '../../lib/copilot/registry';
 import { QuizRunner } from '../StudyTools';
 import { Button, Checkbox, cn, Input, Select, Textarea } from '../ui';
@@ -27,6 +28,30 @@ export const COPILOT_SUGGESTIONS = [
   'Remind me every Sunday at 8 PM to plan my week',
   'I learned CPU scheduling today',
 ];
+
+/** A file attached to a message: image thumbnail or document icon, name and size. */
+function AttachmentChip({ meta, onRemove }: { meta: AttachmentMeta; onRemove?: () => void }) {
+  return (
+    <div className="flex max-w-56 items-center gap-2 rounded-xl border border-line bg-surface p-1.5 pr-2 text-xs">
+      {meta.thumb ? (
+        <img src={meta.thumb} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
+      ) : (
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-ink-2">
+          <FileText className="size-4" />
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-ink">{meta.name}</span>
+        <span className="text-muted">{formatSize(meta.size)}</span>
+      </span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="ml-auto rounded-md p-0.5 text-muted hover:bg-surface-2 hover:text-ink" aria-label={`Remove ${meta.name}`}>
+          <X className="size-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Voice input (Web Speech API where available)
@@ -255,7 +280,7 @@ function ProposalCard({ messageId, p }: { messageId: string; p: Proposal }) {
           )}
           {p.editable.length > 0 && (
             <Button size="sm" variant="secondary" icon={<Pencil className="size-3.5" />} onClick={() => setEditing(true)}>
-              {p.warnings.length ? 'Change time' : 'Edit'}
+              {p.warnings.some((w) => /^(Clashes|Overlaps)/.test(w)) ? 'Change time' : 'Edit'}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={() => void cancel(messageId, p.id)}>
@@ -388,10 +413,45 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
   }, [initialPrompt, send]);
 
   const disabled = !online || aiAvailable === false || !settings.aiPermissions.enabled;
+  const [files, setFiles] = useState<PreparedAttachment[]>([]);
+  const [preparing, setPreparing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function addFiles(list: FileList | File[]) {
+    const incoming = Array.from(list);
+    if (!incoming.length) return;
+    setPreparing(true);
+    try {
+      const next = [...files];
+      for (const f of incoming) {
+        if (next.length >= MAX_FILES) {
+          toast(`You can attach up to ${MAX_FILES} files per message.`, 'error');
+          break;
+        }
+        try {
+          const prepared = await prepareAttachment(f);
+          if (next.reduce((n, x) => n + x.file.size, 0) + prepared.file.size > MAX_TOTAL_BYTES) {
+            toast(`"${f.name}" is too large — attachments can total about 4 MB per message.`, 'error');
+            continue;
+          }
+          next.push(prepared);
+        } catch (err) {
+          toast((err as Error).message, 'error');
+        }
+      }
+      setFiles(next);
+    } finally {
+      setPreparing(false);
+    }
+  }
+
   const submit = (text = input) => {
-    if (!text.trim()) return;
+    if (!text.trim() && !files.length) return;
     setInput('');
-    void send(text);
+    const toSend = files;
+    setFiles([]);
+    void send(text, toSend);
   };
 
   return (
@@ -456,7 +516,14 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
         )}
         {messages.map((m) =>
           m.role === 'user' ? (
-            <div key={m.id} className="flex justify-end">
+            <div key={m.id} className="flex flex-col items-end gap-1.5">
+              {m.attachments?.length ? (
+                <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+                  {m.attachments.map((a, i) => (
+                    <AttachmentChip key={i} meta={a} />
+                  ))}
+                </div>
+              ) : null}
               <p className="max-w-[85%] animate-rise whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm text-accent-ink">{m.content}</p>
             </div>
           ) : (
@@ -473,13 +540,57 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
         <div ref={endRef} />
       </div>
 
+      {files.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Attachments">
+          {files.map((f, i) => (
+            <AttachmentChip key={i} meta={f.meta} onRemove={() => setFiles(files.filter((_, j) => j !== i))} />
+          ))}
+        </div>
+      )}
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        accept={ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) void addFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
       <form
-        className="mt-2 flex items-end gap-1.5 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
+        className={cn(
+          'mt-2 flex items-end gap-1.5 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15',
+          dragging && 'border-accent ring-3 ring-accent/15',
+        )}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
+        onDragOver={(e) => {
+          if (disabled) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (!disabled) void addFiles(e.dataTransfer.files);
+        }}
       >
+        <Button
+          type="button"
+          variant="ghost"
+          className="size-10 shrink-0 rounded-xl p-0"
+          disabled={disabled || busy || files.length >= MAX_FILES}
+          loading={preparing}
+          aria-label="Attach photos or documents"
+          title="Attach photos, PDFs, Word, Excel or text files"
+          onClick={() => fileInput.current?.click()}
+        >
+          <Paperclip className="size-[18px] text-ink-2" />
+        </Button>
         <textarea
           value={input}
           onChange={(e) => {
@@ -494,7 +605,15 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
               submit();
             }
           }}
-          placeholder={disabled ? 'AI unavailable right now' : 'Ask anything…'}
+          onPaste={(e) => {
+            // Pasted screenshots become attachments.
+            const pasted = Array.from(e.clipboardData.files);
+            if (pasted.length) {
+              e.preventDefault();
+              void addFiles(pasted);
+            }
+          }}
+          placeholder={disabled ? 'AI unavailable right now' : files.length ? 'Add a message (optional)…' : 'Ask anything, or attach a photo or document…'}
           disabled={disabled}
           rows={1}
           className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 sm:text-sm"
@@ -507,7 +626,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
             if (final) submit(t);
           }}
         />
-        <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || !input.trim()} loading={busy} aria-label="Send">
+        <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || (!input.trim() && !files.length) || preparing} loading={busy} aria-label="Send">
           <Send className="size-4" />
         </Button>
       </form>

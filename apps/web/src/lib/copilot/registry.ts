@@ -29,17 +29,18 @@ import {
   type ActionName,
   type CalendarEvent,
   type ClassOccurrence,
+  type ClassSchedule,
   type ClassTarget,
   type RevisionSchedule,
   type Settings,
   type Subject,
   type Task,
 } from '@student-os/core';
-import { addExtraClass, learnTopic, markAttendance, rescheduleClass } from '../actions';
+import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, rescheduleClass } from '../actions';
 import { flashcards as genFlashcards } from '../ai';
 import { db } from '../db';
 import { computeAttendance, loadPlannerData, loadSettings, occurrencesBetween } from '../queries';
-import { create, createMany, remove, removeMany, update } from '../repo';
+import { create, createMany, remove, removeMany, update, saveSettings } from '../repo';
 import { REF } from './context';
 
 // ---------------------------------------------------------------------------
@@ -933,6 +934,266 @@ const H: Record<ActionName, Handler> = {
     },
   },
 
+  create_subject: {
+    async prepare(params: any, env) {
+      const dupe = env.subjects.find((s) => s.name.toLowerCase() === String(params.name).toLowerCase() || (params.code && s.code?.toLowerCase() === String(params.code).toLowerCase()));
+      if (dupe) return err(`You already have a subject called "${dupe.name}"${dupe.code ? ` (${dupe.code})` : ''}.`);
+      return proposal('create_subject', params, {
+        title: 'Add subject',
+        heading: params.name,
+        lines: [
+          ...(params.code ? [`Code: ${params.code}`] : []),
+          ...(params.faculty ? [`Faculty: ${params.faculty}`] : []),
+          ...(params.credits !== null ? [`Credits: ${params.credits}`] : []),
+          `Minimum attendance: ${params.minAttendance ?? env.settings.minAttendance}%${params.minAttendance === null ? ' (your default)' : ''}`,
+          ...(params.targetAttendance !== null ? [`Target attendance: ${params.targetAttendance}%`] : []),
+        ],
+        editable: [
+          { path: 'name', label: 'Name', type: 'text' },
+          { path: 'code', label: 'Code', type: 'text' },
+          { path: 'faculty', label: 'Faculty', type: 'text' },
+          { path: 'minAttendance', label: 'Minimum %', type: 'number' },
+        ],
+      });
+    },
+    async execute(p) {
+      const x = p.params as any;
+      await create('subject', {
+        name: x.name,
+        code: x.code,
+        faculty: x.faculty,
+        credits: x.credits,
+        minAttendance: x.minAttendance,
+        targetAttendance: x.targetAttendance,
+        color: await nextSubjectColor(),
+      });
+      return `✓ Subject "${x.name}" added`;
+    },
+  },
+
+  update_subject: {
+    async prepare(params: any, env) {
+      const r = await resolveSubject(env, params.target, params, 'update_subject');
+      if (isPrepared(r)) return r;
+      const s = r.subject;
+      const c = params.changes;
+      const lines: string[] = [];
+      const diff = (label: string, a: unknown, b: unknown, suffix = '') => b !== null && b !== undefined && a !== b && lines.push(`${label}: ${a ?? '—'}${a !== null && a !== undefined ? suffix : ''} → ${b}${suffix}`);
+      diff('Name', s.name, c.name);
+      diff('Code', s.code, c.code);
+      diff('Faculty', s.faculty, c.faculty);
+      diff('Credits', s.credits, c.credits);
+      diff('Minimum attendance', s.minAttendance ?? env.settings.minAttendance, c.minAttendance, '%');
+      diff('Target attendance', s.targetAttendance ?? env.settings.targetAttendance, c.targetAttendance, '%');
+      if (!lines.length) return err(`"${s.name}" already looks like that — nothing to change.`);
+      return proposal('update_subject', params, { title: 'Update subject', heading: s.name, lines, resolved: { subjectId: s.id } });
+    },
+    async execute(p) {
+      const patch = Object.fromEntries(Object.entries((p.params as any).changes).filter(([, v]) => v !== null && v !== undefined));
+      await update('subject', p.resolved.subjectId as string, patch);
+      return '✓ Subject updated';
+    },
+  },
+
+  delete_subject: {
+    async prepare(params: any, env) {
+      const r = await resolveSubject(env, params.target, params, 'delete_subject');
+      if (isPrepared(r)) return r;
+      const slots = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.subjectId === r.subject.id && (!s.validUntil || s.validUntil >= env.today));
+      return proposal('delete_subject', params, {
+        title: 'Delete subject',
+        heading: r.subject.name,
+        lines: [`${slots.length} weekly class${slots.length === 1 ? '' : 'es'} will stop appearing from today.`, 'Past attendance history is kept.'],
+        resolved: { subjectId: r.subject.id, slotIds: slots.map((s) => s.id) },
+      });
+    },
+    async execute(p, env) {
+      for (const id of p.resolved.slotIds as string[]) await update('classSchedule', id, { validUntil: addDays(env.today, -1) });
+      await remove('subject', p.resolved.subjectId as string);
+      return '✓ Subject deleted';
+    },
+  },
+
+  update_weekly_class: {
+    async prepare(params: any, env) {
+      const r = await resolveSlot(env, params.target, params, 'update_weekly_class');
+      if (isPrepared(r)) return r;
+      const s = r.slot;
+      const c = params.changes;
+      const weekday = c.weekday ?? s.weekday;
+      const start = c.startTime ?? s.startTime;
+      const end = c.endTime ?? (c.startTime ? minutesToTime(timeToMinutes(c.startTime) + timeToMinutes(s.endTime) - timeToMinutes(s.startTime)) : s.endTime);
+      const room = c.room ?? s.room;
+      if (start >= end) return err('The class must end after it starts.');
+      const name = env.subjects.find((x) => x.id === s.subjectId)?.name ?? 'Class';
+      const day = (d: number) => WEEKDAYS[d]![0]!.toUpperCase() + WEEKDAYS[d]!.slice(1);
+      const lines = [
+        ...(weekday !== s.weekday ? [`Every ${day(s.weekday)} → every ${day(weekday)}`] : [`Every ${day(weekday)}`]),
+        ...(start !== s.startTime || end !== s.endTime ? [`${range(s.startTime, s.endTime)} → ${range(start, end)}`] : [range(start, end)]),
+        ...(room !== s.room ? [`Room: ${s.room ?? '—'} → ${room ?? '—'}`] : []),
+        'Applies from today; past attendance is unchanged.',
+      ];
+      const others = (await db.entity('classSchedule').toArray()).filter((x) => !x.deletedAt && x.active && x.id !== s.id && x.weekday === weekday && (!x.validUntil || x.validUntil >= env.today));
+      const warnings = others
+        .filter((x) => overlaps({ startTime: start, endTime: end }, x))
+        .map((x) => `Clashes with ${env.subjects.find((y) => y.id === x.subjectId)?.name ?? 'a class'} every ${day(weekday)} ${range(x.startTime, x.endTime)}`);
+      return proposal('update_weekly_class', params, {
+        title: 'Change weekly class',
+        heading: name,
+        lines,
+        warnings,
+        resolved: { slotId: s.id, weekday, start, end, room },
+        confirmLabel: warnings.length ? 'Change anyway' : 'Confirm',
+      });
+    },
+    async execute(p, env) {
+      const r = p.resolved as { slotId: string; weekday: number; start: string; end: string; room: string | null };
+      const old = await db.entity('classSchedule').get(r.slotId);
+      if (!old) throw new Error('slot missing');
+      // End the old slot yesterday and start the new one today, so past attendance stays correct.
+      await update('classSchedule', old.id, { validUntil: addDays(env.today, -1) });
+      await create('classSchedule', { subjectId: old.subjectId, weekday: r.weekday, startTime: r.start, endTime: r.end, room: r.room, faculty: old.faculty, type: old.type, validFrom: env.today });
+      return '✓ Timetable updated — calendar and reminders follow automatically';
+    },
+  },
+
+  delete_weekly_class: {
+    async prepare(params: any, env) {
+      const r = await resolveSlot(env, params.target, params, 'delete_weekly_class');
+      if (isPrepared(r)) return r;
+      const s = r.slot;
+      const name = env.subjects.find((x) => x.id === s.subjectId)?.name ?? 'Class';
+      return proposal('delete_weekly_class', params, {
+        title: 'Remove weekly class',
+        heading: name,
+        lines: [`Every ${WEEKDAYS[s.weekday]}, ${range(s.startTime, s.endTime)}`, 'Removed from today on; past attendance is kept.'],
+        resolved: { slotId: s.id },
+      });
+    },
+    async execute(p, env) {
+      await update('classSchedule', p.resolved.slotId as string, { validUntil: addDays(env.today, -1) });
+      return '✓ Weekly class removed';
+    },
+  },
+
+  delete_exam: {
+    async prepare(params: any, env) {
+      const rows = (await db.entity('exam').toArray()).filter((e) => !e.deletedAt);
+      const r = await resolveByTitle(rows, REF.exam, { ref: params.target.ref, title: params.target.title ?? params.target.subject }, params, 'delete_exam', 'exam', (e) => `${e.title} — ${e.date}`);
+      if (isPrepared(r)) return r;
+      return proposal('delete_exam', params, { title: 'Delete exam', heading: r.row.title, lines: [dayLabel(r.row.date, env.today)], resolved: { id: r.row.id } });
+    },
+    async execute(p) {
+      await remove('exam', p.resolved.id as string);
+      return '✓ Exam deleted';
+    },
+  },
+
+  delete_assignment: {
+    async prepare(params: any, env) {
+      const rows = (await db.entity('assignment').toArray()).filter((a) => !a.deletedAt);
+      const r = await resolveByTitle(rows, REF.assignment, params.target, params, 'delete_assignment', 'assignment', (a) => `${a.title} — due ${a.deadline}`);
+      if (isPrepared(r)) return r;
+      return proposal('delete_assignment', params, { title: 'Delete assignment', heading: r.row.title, lines: [`Due ${dayLabel(r.row.deadline, env.today)}`], resolved: { id: r.row.id } });
+    },
+    async execute(p) {
+      await remove('assignment', p.resolved.id as string);
+      return '✓ Assignment deleted';
+    },
+  },
+
+  delete_note: {
+    async prepare(params: any) {
+      const rows = (await db.entity('note').toArray()).filter((n) => !n.deletedAt);
+      const r = await resolveByTitle(rows, 'n', params.target, params, 'delete_note', 'note', (n) => n.title);
+      if (isPrepared(r)) return r;
+      return proposal('delete_note', params, { title: 'Delete note', heading: r.row.title, lines: [r.row.body ? `${r.row.body.slice(0, 120)}${r.row.body.length > 120 ? '…' : ''}` : '(empty note)'], resolved: { id: r.row.id } });
+    },
+    async execute(p) {
+      await remove('note', p.resolved.id as string);
+      return '✓ Note deleted';
+    },
+  },
+
+  update_reminder: {
+    async prepare(params: any, env) {
+      const rows = (await db.entity('reminder').toArray()).filter((x) => !x.deletedAt);
+      const r = await resolveByTitle(rows, REF.reminder, params.target, params, 'update_reminder', 'reminder', (x) => `${x.title} — ${describeRecurrence(x.recurrence, x.date)} ${formatTime12(x.time)}`);
+      if (isPrepared(r)) return r;
+      const x = r.row;
+      const c = params.changes;
+      const next = {
+        title: c.title ?? x.title,
+        date: c.date ?? x.date,
+        time: c.time ?? x.time,
+        active: c.active ?? x.active,
+        recurrence: c.recurrence ? { ...c.recurrence, until: x.recurrence.until } : x.recurrence,
+      };
+      const lines = [
+        ...(next.title !== x.title ? [`Title: ${x.title} → ${next.title}`] : []),
+        ...(next.date !== x.date ? [`Date: ${dayLabel(x.date, env.today)} → ${dayLabel(next.date, env.today)}`] : []),
+        ...(next.time !== x.time ? [`Time: ${formatTime12(x.time)} → ${formatTime12(next.time)}`] : []),
+        ...(c.recurrence ? [`Repeats: ${describeRecurrence(x.recurrence, x.date)} → ${describeRecurrence(next.recurrence, next.date)}`] : []),
+        ...(next.active !== x.active ? [next.active ? 'Resume this reminder' : 'Pause this reminder'] : []),
+      ];
+      if (!lines.length) return err('Nothing to change.');
+      return proposal('update_reminder', params, { title: 'Update reminder', heading: x.title, lines, resolved: { id: x.id, patch: next } });
+    },
+    async execute(p) {
+      await update('reminder', p.resolved.id as string, p.resolved.patch as never);
+      return '✓ Reminder updated';
+    },
+  },
+
+  delete_reminder: {
+    async prepare(params: any) {
+      const rows = (await db.entity('reminder').toArray()).filter((x) => !x.deletedAt);
+      const r = await resolveByTitle(rows, REF.reminder, params.target, params, 'delete_reminder', 'reminder', (x) => `${x.title} — ${formatTime12(x.time)}`);
+      if (isPrepared(r)) return r;
+      return proposal('delete_reminder', params, { title: 'Delete reminder', heading: r.row.title, lines: [`${describeRecurrence(r.row.recurrence, r.row.date)} at ${formatTime12(r.row.time)}`], resolved: { id: r.row.id } });
+    },
+    async execute(p) {
+      await remove('reminder', p.resolved.id as string);
+      return '✓ Reminder deleted';
+    },
+  },
+
+  update_settings: {
+    async prepare(params: any, env) {
+      const s = env.settings;
+      const c = params.changes;
+      const lines: string[] = [];
+      const patch: Partial<Settings> = {};
+      const set = <K extends keyof Settings>(key: K, label: string, value: Settings[K] | null | undefined, fmt = (v: unknown) => String(v)) => {
+        if (value === null || value === undefined || JSON.stringify(value) === JSON.stringify(s[key])) return;
+        patch[key] = value;
+        lines.push(`${label}: ${s[key] === null ? '—' : fmt(s[key])} → ${fmt(value)}`);
+      };
+      const days = (v: unknown) => (v as number[]).map((d) => WEEKDAYS[d]!.slice(0, 3)).join(', ');
+      set('minAttendance', 'Minimum attendance', c.minAttendance, (v) => `${v}%`);
+      set('targetAttendance', 'Target attendance', c.targetAttendance, (v) => `${v}%`);
+      set('safeAttendance', 'Safe attendance', c.safeAttendance, (v) => `${v}%`);
+      set('dailyStudyTargetMinutes', 'Daily study target', c.dailyStudyTargetMinutes, (v) => `${v} min`);
+      set('semesterStart', 'Semester starts', c.semesterStart);
+      set('semesterEnd', 'Semester ends', c.semesterEnd);
+      set('workingDays', 'Working days', c.workingDays ? [...new Set(c.workingDays as number[])].sort() : null, days);
+      set('revisionIntervals', 'Revision days', c.revisionIntervals ? [...new Set(c.revisionIntervals as number[])].sort((a, b) => a - b) : null, (v) => (v as number[]).join(', '));
+      set('theme', 'Theme', c.theme);
+      if (c.classReminderMinutes) {
+        const cats = s.notifications.categories;
+        const offsets = [...new Set(c.classReminderMinutes as number[])].sort((a, b) => b - a);
+        patch.notifications = { ...s.notifications, categories: { ...cats, classes: { ...cats.classes, enabled: offsets.length > 0, offsets } } };
+        lines.push(`Class reminders: ${cats.classes.offsets.join(', ') || 'off'} → ${offsets.join(', ') || 'off'} min before`);
+      }
+      if (!lines.length) return err('Your settings already look like that.');
+      return proposal('update_settings', params, { title: 'Change settings', heading: 'Settings', lines, resolved: { patch } });
+    },
+    async execute(p) {
+      await saveSettings(p.resolved.patch as Partial<Settings>);
+      return '✓ Settings updated';
+    },
+  },
+
   navigate: {
     async prepare(params: any) {
       const labels: Record<string, string> = { today: "Today's plan", classes: 'Timetable', review: 'Review' };
@@ -945,6 +1206,58 @@ const H: Record<ActionName, Handler> = {
   },
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+async function resolveSubject(
+  env: Env,
+  target: { ref?: string | null; name?: string | null },
+  params: Record<string, unknown>,
+  action: ActionName,
+): Promise<{ subject: Subject } | Prepared> {
+  if (target.ref) {
+    const hit = env.subjects.find((s) => refOf(REF.subject, s.id) === target.ref);
+    if (hit) return { subject: hit };
+  }
+  const matches = findSubjects(target.name, env.subjects);
+  if (!matches.length) return err(`You don't have a subject called "${target.name ?? ''}".`);
+  if (matches.length > 1) {
+    return {
+      kind: 'clarify',
+      question: 'Which subject do you mean?',
+      options: matches.slice(0, 8).map((s) => ({ label: `${s.name}${s.code ? ` (${s.code})` : ''}`, action, params: withRef(params, refOf(REF.subject, s.id)) })),
+    };
+  }
+  return { subject: matches[0]! };
+}
+
+async function resolveSlot(
+  env: Env,
+  target: { ref?: string | null; subject?: string | null; weekday?: number | null; time?: string | null },
+  params: Record<string, unknown>,
+  action: ActionName,
+): Promise<{ slot: ClassSchedule } | Prepared> {
+  let slots = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.active && (!s.validUntil || s.validUntil >= env.today));
+  if (target.ref) {
+    const hit = slots.find((s) => refOf('w', s.id) === target.ref);
+    if (hit) return { slot: hit };
+  }
+  if (target.subject) {
+    const subjects = findSubjects(target.subject, env.subjects);
+    if (!subjects.length) return err(`You don't have a subject called "${target.subject}".`);
+    slots = slots.filter((s) => subjects.some((x) => x.id === s.subjectId));
+  }
+  if (target.weekday !== null && target.weekday !== undefined) slots = slots.filter((s) => s.weekday === target.weekday);
+  if (target.time) slots = slots.filter((s) => s.startTime === target.time);
+  const name = (s: ClassSchedule) => env.subjects.find((x) => x.id === s.subjectId)?.name ?? 'Class';
+  if (!slots.length) return err("I couldn't find that weekly class in your timetable. I won't guess.");
+  if (slots.length > 1) {
+    return {
+      kind: 'clarify',
+      question: 'Which weekly class do you mean?',
+      options: slots.slice(0, 10).map((s) => ({ label: `${name(s)} — ${WEEKDAYS[s.weekday]!.slice(0, 3)} ${range(s.startTime, s.endTime)}`, action, params: withRef(params, refOf('w', s.id)) })),
+    };
+  }
+  return { slot: slots[0]! };
+}
 
 async function matchingRevisions(env: Env, f: { subject?: string | null; topic?: string | null; fromDate?: string | null; toDate?: string | null }) {
   const [revs, topics] = await Promise.all([db.entity('revisionSchedule').toArray(), db.entity('topic').toArray()]);

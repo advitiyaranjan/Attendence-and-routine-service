@@ -52,7 +52,13 @@ aiRouter.post('/timetable', upload.single('file'), async (req, res) => {
   res.json(await ai.analyzeTimetable(req.userId ?? null, req.file));
 });
 
-aiRouter.post('/command', async (req, res) => {
+/** Optional attachments (images, PDFs, Word, Excel, text) for AI Pilot; small enough for serverless limits. */
+const commandUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 4 } });
+
+aiRouter.post('/command', commandUpload.array('files', 4), async (req, res) => {
+  // Multipart requests carry the JSON body in a `payload` field.
+  const raw = typeof req.body?.payload === 'string' ? JSON.parse(req.body.payload) : req.body;
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   const body = parseBody(
     z.object({
       messages: z
@@ -63,9 +69,9 @@ aiRouter.post('/command', async (req, res) => {
       today: isoDate,
       permissions: aiPermissionsSchema.partial().default({}),
     }),
-    req.body,
+    raw,
   );
-  res.json(await ai.command(req.userId ?? null, body.messages, body.context, body.today, body.permissions));
+  res.json(await ai.command(req.userId ?? null, body.messages, body.context, body.today, body.permissions, files));
 });
 
 aiRouter.post('/flashcards', async (req, res) => {

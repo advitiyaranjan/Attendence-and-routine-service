@@ -146,7 +146,7 @@ describe('AI action registry', () => {
         { action: 'delete_task', params: { target: { title: 'x' } } },
         { action: 'move_revisions', params: { fromDate: '2026-10-03', toDate: '2026-10-04' } },
       ],
-      settings().aiPermissions,
+      { ...settings().aiPermissions, deleteData: false, bulkChanges: false },
     );
     expect(intents.map((i) => i.action)).toEqual(['mark_attendance', 'reschedule_class']);
     expect(intents[1]!.params).toMatchObject({ target: { time: '10:00' }, newStartTime: '14:00' });

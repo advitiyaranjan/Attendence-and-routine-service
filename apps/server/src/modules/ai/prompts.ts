@@ -46,6 +46,13 @@ Return ONLY JSON:
 Available actions (you may ONLY use these):
 ${catalog || '(none: the student has not permitted any changes, so answer questions only)'}
 
+Attachments:
+- The student may attach photos, PDFs or documents (timetables, assignment sheets, syllabi, notices, notes).
+- Read them carefully and use them to answer or to propose actions (e.g. create_assignment / create_exam for each deadline, create_tasks, create_events).
+- Only use dates, times and names that actually appear in the attachment; if something is unreadable or ambiguous, say so instead of guessing.
+- Summarise what you found in "reply" so the student can check it against the document.
+- When you return actions, never say you "added", "created" or "scheduled" anything: nothing changes until the student confirms. Say what you found and that it is ready to confirm.
+
 Referencing existing records:
 - Records in CONTEXT carry a "ref" (e.g. "c1a2b3c"). When an action targets an existing record, put that ref in target.ref.
 - If no record in CONTEXT matches, do NOT invent one: say so in "reply" and return no action.

@@ -122,12 +122,70 @@ describe('Copilot actions', () => {
   });
 });
 
+describe('subjects and settings', () => {
+  it('creates, updates and deletes subjects with confirmation and undo', async () => {
+    const add = await prepareAction('create_subject', { name: 'Computer Networks', code: 'CS303', faculty: 'Dr. Mehta', credits: 4, minAttendance: 80, targetAttendance: null });
+    expect(add.kind).toBe('proposal');
+    if (add.kind !== 'proposal') return;
+    expect(add.proposal.lines).toEqual(['Code: CS303', 'Faculty: Dr. Mehta', 'Credits: 4', 'Minimum attendance: 80%']);
+    expect((await db.entity('subject').toArray()).some((s) => s.name === 'Computer Networks')).toBe(false);
+    const done = await confirmProposal(add.proposal);
+    expect(done.result).toBe('✓ Subject "Computer Networks" added');
+    const cn = (await db.entity('subject').toArray()).find((s) => s.name === 'Computer Networks')!;
+    expect(cn).toMatchObject({ code: 'CS303', minAttendance: 80 });
+
+    expect(await prepareAction('create_subject', { name: 'computer networks', code: null, faculty: null, credits: null, minAttendance: null, targetAttendance: null })).toMatchObject({ kind: 'error' });
+
+    const upd = await prepareAction('update_subject', { target: { ref: null, name: 'CN' }, changes: { name: null, code: null, faculty: null, credits: null, minAttendance: 75, targetAttendance: null } });
+    expect(upd).toMatchObject({ kind: 'proposal', proposal: { lines: ['Minimum attendance: 80% → 75%'] } });
+    if (upd.kind === 'proposal') await confirmProposal(upd.proposal);
+    expect((await db.entity('subject').get(cn.id))!.minAttendance).toBe(75);
+
+    const del = await prepareAction('delete_subject', { target: { ref: null, name: 'Computer Networks' } });
+    expect(del.kind).toBe('proposal');
+    if (del.kind !== 'proposal') return;
+    const gone = await confirmProposal(del.proposal);
+    expect((await db.entity('subject').get(cn.id))!.deletedAt).not.toBeNull();
+    await undoLog(gone.logId!);
+    expect((await db.entity('subject').get(cn.id))!.deletedAt).toBeNull();
+  });
+
+  it('changes a weekly class from today on, keeping history', async () => {
+    const r = await prepareAction('update_weekly_class', { target: { ref: null, subject: 'DBMS', weekday: 5, time: '14:00' }, changes: { weekday: null, startTime: '15:00', endTime: null, room: 'Lab 2' } });
+    expect(r.kind).toBe('proposal');
+    if (r.kind !== 'proposal') return;
+    expect(r.proposal.lines).toContain('2:00 PM – 3:00 PM → 3:00 PM – 4:00 PM');
+    const changed = await confirmProposal(r.proposal);
+    const slots = (await db.entity('classSchedule').where('subjectId').equals(dbms).toArray()).filter((s) => s.startTime === '15:00' || s.startTime === '14:00');
+    expect(slots.find((s) => s.startTime === '14:00')!.validUntil).toBe('2026-10-01');
+    expect(slots.find((s) => s.startTime === '15:00')).toMatchObject({ validFrom: '2026-10-02', room: 'Lab 2' });
+    // Undo restores the original slot exactly.
+    await undoLog(changed.logId!);
+    const after = (await db.entity('classSchedule').where('subjectId').equals(dbms).toArray()).filter((s) => !s.deletedAt);
+    expect(after.find((s) => s.startTime === '14:00')!.validUntil).toBeNull();
+    expect(after.some((s) => s.startTime === '15:00')).toBe(false);
+  });
+
+  it('changes settings with a before → after summary', async () => {
+    const r = await prepareAction('update_settings', { changes: { minAttendance: 80, dailyStudyTargetMinutes: 180, classReminderMinutes: [30, 10] } });
+    expect(r).toMatchObject({ kind: 'proposal', proposal: { lines: ['Minimum attendance: 75% → 80%', 'Daily study target: 240 min → 180 min', 'Class reminders: 15 → 30, 10 min before'] } });
+    if (r.kind !== 'proposal') return;
+    const done = await confirmProposal(r.proposal);
+    const s = await getSettings();
+    expect([s.minAttendance, s.dailyStudyTargetMinutes, s.notifications.categories.classes.offsets]).toEqual([80, 180, [30, 10]]);
+    await undoLog(done.logId!);
+    expect((await getSettings()).notifications.categories.classes.offsets).toEqual([15]);
+  });
+});
+
 describe('Copilot command flow', () => {
   it('turns validated intents into proposals and blocks unpermitted ones', async () => {
     const intents = [
       { action: 'create_task', params: { title: 'Complete OS Assignment', dueDate: '2026-10-03', priority: 'high', estimatedMinutes: 120 } },
       { action: 'delete_task', params: { target: { title: 'anything' } } },
     ];
+    // The student turned off deletions for this test: AI Pilot must refuse them.
+    await saveSettings({ aiPermissions: { ...(await getSettings()).aiPermissions, deleteData: false } });
     const settings = await getSettings();
     // What the server would return after validateIntents with the student's permissions.
     const { intents: ok, rejected } = validateIntents(intents, settings.aiPermissions);

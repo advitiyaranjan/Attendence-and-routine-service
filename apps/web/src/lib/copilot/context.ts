@@ -57,6 +57,17 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     ctx.events = events.map((e) => ({ ref: refOf(REF.event, e.id), title: e.title, type: e.type, date: e.date, start: e.startTime, end: e.endTime, subject: subjectName(e.subjectId), done: !!e.completedAt }));
     const reminders = live(await db.entity('reminder').toArray()).filter((r) => r.active);
     ctx.reminders = reminders.map((r) => ({ ref: refOf(REF.reminder, r.id), title: r.title, date: r.date, time: r.time, repeats: r.recurrence.freq }));
+    // Recurring weekly timetable (refs "w…") so AI Pilot can change or remove a slot.
+    const slots = live(await db.entity('classSchedule').toArray()).filter((s) => s.active && (!s.validUntil || s.validUntil >= today));
+    ctx.weeklyTimetable = slots.map((s) => ({
+      ref: refOf('w', s.id),
+      subject: subjectName(s.subjectId),
+      weekday: s.weekday,
+      day: WEEKDAYS[s.weekday],
+      start: s.startTime,
+      end: s.endTime,
+      room: s.room,
+    }));
     // Free time today (from now) and tomorrow, so scheduling never clashes.
     ctx.freeTime = [today, addDays(today, 1)].map((date) => ({
       date,
@@ -117,7 +128,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
 
   if (p.readNotes) {
     const notes = live(await db.entity('note').toArray());
-    ctx.notes = notes.slice(0, 20).map((n) => ({ title: n.title, subject: subjectName(n.subjectId), excerpt: n.body.slice(0, 300) }));
+    ctx.notes = notes.slice(0, 20).map((n) => ({ ref: refOf('n', n.id), title: n.title, subject: subjectName(n.subjectId), excerpt: n.body.slice(0, 300) }));
   }
   return ctx;
 }
