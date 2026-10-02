@@ -80,6 +80,21 @@ model UserSettings {
   deviceId  String
 }
 
+/// One-time email codes for sign-up, sign-in and email changes. Only a hash of the code is stored.
+model EmailOtp {
+  id        String   @id @default(uuid())
+  email     String
+  purpose   String
+  userId    String?
+  codeHash  String
+  payload   Json?
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, purpose])
+}
+
 // ---------------------------------------------------------------------------
 // Timetable & attendance
 

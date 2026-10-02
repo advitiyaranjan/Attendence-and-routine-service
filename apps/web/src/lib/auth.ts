@@ -55,16 +55,54 @@ async function setSignedIn(user: User | null) {
   }
 }
 
+/** An emailed one-time code the student must enter to finish. */
+export interface OtpChallenge {
+  challengeId: string;
+  email: string;
+  purpose: 'register' | 'login' | 'reset' | 'change_email';
+}
+
+/** Step 1: check details and email a code. The account exists only after `verifyCode`. */
 export async function register(email: string, password: string, name?: string) {
-  const res = await api<{ user: User; token?: string }>('/api/auth/register', { body: { email, password, name } });
+  return (await api<{ otp: OtpChallenge }>('/api/auth/register', { body: { email, password, name } })).otp;
+}
+
+/** Step 1: check the password and email a code. */
+export async function login(email: string, password: string) {
+  return (await api<{ otp: OtpChallenge }>('/api/auth/login', { body: { email, password } })).otp;
+}
+
+/** Step 2 of sign-in / sign-up. */
+export async function verifyCode(otp: OtpChallenge, code: string) {
+  const res = await api<{ user: User; token?: string }>('/api/auth/otp/verify', { body: { challengeId: otp.challengeId, code, purpose: otp.purpose } });
   setAuthToken(res.token);
   await setSignedIn(res.user);
 }
 
-export async function login(email: string, password: string) {
-  const res = await api<{ user: User; token?: string }>('/api/auth/login', { body: { email, password } });
+export async function resendCode(otp: OtpChallenge) {
+  await api('/api/auth/otp/resend', { body: { challengeId: otp.challengeId } });
+}
+
+export async function forgotPassword(email: string) {
+  return (await api<{ otp: OtpChallenge }>('/api/auth/password/forgot', { body: { email } })).otp;
+}
+
+/** Set a new password with the emailed code; signs in on success. */
+export async function resetPassword(otp: OtpChallenge, code: string, password: string) {
+  const res = await api<{ user: User; token?: string }>('/api/auth/password/reset', { body: { challengeId: otp.challengeId, code, password } });
   setAuthToken(res.token);
   await setSignedIn(res.user);
+}
+
+/** Change email: a code is sent to the new address. */
+export async function changeEmail(email: string) {
+  return (await api<{ otp: OtpChallenge }>('/api/auth/email/change', { body: { email } })).otp;
+}
+
+export async function confirmEmailChange(otp: OtpChallenge, code: string) {
+  const res = await api<{ user: User }>('/api/auth/email/change/verify', { body: { challengeId: otp.challengeId, code } });
+  useApp.getState().setUser(res.user);
+  await kvSet(USER_KEY, res.user);
 }
 
 export async function loginWithGoogle(credential: string) {

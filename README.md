@@ -49,6 +49,8 @@ One Vercel project serves both the PWA and the API (an Express app bundled into 
    | `JWT_SECRET` | sign-in (required) | 32+ random characters: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
    | `GEMINI_API_KEY` | AI Pilot, timetable reading | a key from Google AI Studio |
    | `GOOGLE_CLIENT_ID` | "Continue with Google" | OAuth client (Web application); add `https://<your-app>.vercel.app` to *Authorized JavaScript origins* |
+   | `SMTP_URL` | Email codes (required) | One-time codes for sign-up, sign-in, forgot password and email changes. e.g. Gmail `smtps://you%40gmail.com:APP-PASSWORD@smtp.gmail.com:465` (use a Google *App password*) or Resend `smtps://resend:API-KEY@smtp.resend.com:465`. Without it, production refuses to send codes; development prints them to the server console |
+   | `MAIL_FROM` | Email codes | Sender, e.g. `Student OS <you@gmail.com>` (must be an address your SMTP account may send from) |
    | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | push reminders when the app is closed | `npm run vapid -w @student-os/server` |
    | `CRON_SECRET` | push reminders on Vercel | 16+ random characters |
    | `PUSH_CRON_SCHEDULE` | push reminders on Vercel **Pro** | `* * * * *` (Hobby allows only daily crons; instead, call `GET /api/cron/push` every minute from a free scheduler such as cron-job.org with the header `Authorization: Bearer <CRON_SECRET>`) |

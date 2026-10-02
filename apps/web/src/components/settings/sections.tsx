@@ -16,6 +16,7 @@ import { toast, useApp } from '../../lib/store';
 import { syncNow } from '../../lib/sync';
 import { ACCENT_NAMES, accentSwatch } from '../../lib/theme';
 import { AIPermissionSettings } from './AIPermissionSettings';
+import { ChangeEmailButton } from './ChangeEmail';
 import { NotificationSettings } from './NotificationSettings';
 import { DayPicker, NumberField, Segmented, SettingBlock, SettingRow, SettingsGroup } from './SettingsUI';
 
@@ -54,7 +55,9 @@ export function AccountSection() {
   return (
     <div className="space-y-6">
       <SettingsGroup title="Account">
-        <SettingRow label="Signed in as" description={user.email ?? user.name} />
+        <SettingRow label="Signed in as" description={user.email ?? user.name}>
+          <ChangeEmailButton current={user.email} />
+        </SettingRow>
         <SettingRow label="Sync" description={sync.error ? `Last problem: ${sync.error}. Retrying automatically.` : 'Changes sync across your devices automatically.'}>
           <div className="flex items-center gap-2">
             <SyncBadge />

@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { timetableExtractionSchema, type SyncOperation } from '@student-os/core';
 import { createApp } from './app';
 import { validateOperation } from './modules/sync/service';
 import { GeminiClient, statusOf } from './modules/ai/gemini';
 import { HttpError } from './lib/http';
+import { prisma } from './db';
 import { signActionToken, verifyActionToken } from './modules/push/scheduler';
 
 const now = '2026-10-02T10:00:00.000Z';
@@ -68,6 +69,10 @@ describe('sync validation', () => {
 });
 
 describe('Gemini output validation', () => {
+  // Usage logging needs a database; these tests don't.
+  beforeAll(() => {
+    vi.spyOn(prisma.aIUsage, 'create').mockResolvedValue({} as never);
+  });
   function clientReturning(...texts: string[]) {
     const client = new GeminiClient('test-key', 'test-model');
     const generateContent = vi.fn();
