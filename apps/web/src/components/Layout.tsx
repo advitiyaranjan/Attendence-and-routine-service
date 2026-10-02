@@ -24,6 +24,8 @@ import {
   Loader2,
   LogOut,
   NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Repeat,
   Search,
@@ -495,22 +497,76 @@ function useKeyboardShortcuts() {
   }, [navigate, openQuickAdd]);
 }
 
-function SideLink({ item }: { item: NavItem }) {
+function SideLink({ item, compact = false }: { item: NavItem; compact?: boolean }) {
   const Icon = item.icon;
   return (
     <NavLink
       to={item.to}
       end={item.to === '/'}
+      title={item.label}
       className={({ isActive }) =>
         cn(
-          'flex h-9 items-center gap-3 rounded-xl px-3 text-sm transition-colors',
+          'flex h-9 items-center gap-3 overflow-hidden whitespace-nowrap rounded-xl text-sm transition-colors [&>svg]:shrink-0',
+          compact ? 'justify-center px-0' : 'px-3',
           isActive ? 'bg-accent-soft font-medium text-ink [&>svg]:text-accent' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
         )
       }
     >
-      <Icon className="size-[18px]" /> {item.label}
+      <Icon className="size-[18px]" />
+      {compact ? <span className="sr-only">{item.label}</span> : item.label}
     </NavLink>
   );
+}
+
+const SIDEBAR_PIN_KEY = 'sidebar.pinned';
+const SIDEBAR_IDLE_MS = 5000;
+
+/**
+ * Desktop sidebar: pinned open, or (default) an icon rail that expands while
+ * the pointer is over it and folds away 5 s after the pointer leaves.
+ */
+function useSidebar() {
+  const [pinned, setPinnedState] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_PIN_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [open, setOpen] = useState(true);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  const scheduleClose = () => {
+    cancel();
+    timer.current = setTimeout(() => setOpen(false), SIDEBAR_IDLE_MS);
+  };
+  // Starts open, then folds away if the pointer never comes to it.
+  useEffect(() => {
+    scheduleClose();
+    return cancel;
+  }, []);
+  const setPinned = (v: boolean) => {
+    setPinnedState(v);
+    try {
+      localStorage.setItem(SIDEBAR_PIN_KEY, String(v));
+    } catch {
+      /* per-device convenience only */
+    }
+    if (!v) scheduleClose();
+  };
+  return {
+    pinned,
+    expanded: pinned || open,
+    setPinned,
+    onEnter: () => {
+      cancel();
+      setOpen(true);
+    },
+    onLeave: scheduleClose,
+  };
 }
 
 export function Layout() {
@@ -521,37 +577,62 @@ export function Layout() {
   const openCopilot = useCopilot((s) => s.setOpen);
   const navigate = useNavigate();
   useKeyboardShortcuts();
+  const sidebar = useSidebar();
+  const wide = sidebar.expanded;
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
   return (
     <div className="min-h-dvh md:flex">
-      <aside className="safe-top sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-surface md:flex">
-        <div className="flex items-center gap-2.5 px-5 py-5">
+      {/* Reserves the rail's width; when unpinned the expanded panel floats over the page. */}
+      <div className={cn('sticky top-0 z-40 hidden h-dvh shrink-0 transition-[width] duration-200 md:block', sidebar.pinned ? 'w-64' : 'w-[4.5rem]')}>
+      <aside
+        onMouseEnter={sidebar.onEnter}
+        onMouseLeave={sidebar.onLeave}
+        onFocus={sidebar.onEnter}
+        className={cn(
+          'safe-top absolute inset-y-0 left-0 z-40 flex flex-col overflow-hidden border-r border-line bg-surface transition-[width,box-shadow] duration-200',
+          wide ? 'w-64' : 'w-[4.5rem]',
+          wide && !sidebar.pinned && 'shadow-pop',
+        )}
+      >
+        <div className={cn('flex items-center gap-2.5 py-5', wide ? 'px-5' : 'justify-center px-0')}>
           <AppLogo size="sm" />
-          <span className="text-[15px] font-semibold tracking-tight">Student OS</span>
+          {wide && <span className="flex-1 truncate text-[15px] font-semibold tracking-tight">Student OS</span>}
+          {wide && (
+            <button
+              type="button"
+              onClick={() => sidebar.setPinned(!sidebar.pinned)}
+              className="-mr-1.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+              aria-label={sidebar.pinned ? 'Collapse sidebar (folds away after 5 s)' : 'Keep sidebar open'}
+              title={sidebar.pinned ? 'Collapse sidebar (folds away after 5 s)' : 'Keep sidebar open'}
+            >
+              {sidebar.pinned ? <PanelLeftClose className="size-[18px]" /> : <PanelLeftOpen className="size-[18px]" />}
+            </button>
+          )}
         </div>
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3" aria-label="Main">
+        <nav className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3" aria-label="Main">
           {NAV.map((item) => (
-            <SideLink key={item.to} item={item} />
+            <SideLink key={item.to} item={item} compact={!wide} />
           ))}
-          <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-muted">More</div>
+          {wide ? <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-muted">More</div> : <div className="mx-2 my-3 border-t border-line" />}
           {NAV_MORE.map((item) => (
-            <SideLink key={item.to} item={item} />
+            <SideLink key={item.to} item={item} compact={!wide} />
           ))}
         </nav>
         <div className="space-y-1 border-t border-line p-3">
-          <SideLink item={{ to: '/settings', label: 'Settings', icon: SettingsIcon }} />
-          <NavLink to="/settings" className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-surface-2">
+          <SideLink item={{ to: '/settings', label: 'Settings', icon: SettingsIcon }} compact={!wide} />
+          <NavLink to="/settings" title="Account" className={cn('flex items-center gap-3 rounded-xl py-2 hover:bg-surface-2', wide ? 'px-3' : 'justify-center px-0')}>
             <Avatar />
-            <div className="min-w-0">
+            <div className={cn('min-w-0', !wide && 'hidden')}>
               <div className="truncate text-sm font-medium">{settings.profile.name || user?.name || 'Student'}</div>
               <div className="truncate text-xs text-muted">{user?.email ?? 'This device only'}</div>
             </div>
           </NavLink>
         </div>
       </aside>
+      </div>
 
       <div className="min-w-0 flex-1">
         <header className="safe-top sticky top-0 z-30 border-b border-line bg-page/85 backdrop-blur-md">
