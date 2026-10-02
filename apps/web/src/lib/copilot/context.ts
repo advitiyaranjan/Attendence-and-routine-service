@@ -35,6 +35,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     now: { date: today, weekday: WEEKDAYS[new Date().getDay()], time: `${String(Math.floor(now.minutes / 60)).padStart(2, '0')}:${String(now.minutes % 60).padStart(2, '0')}` },
     collegeHours: `${settings.collegeStart}-${settings.collegeEnd}`,
     dailyStudyTargetMinutes: settings.dailyStudyTargetMinutes,
+    ...(settings.studyTimes.length ? { preferredStudyTimes: settings.studyTimes } : {}),
     subjects: subjects.map((s) => ({ ref: refOf(REF.subject, s.id), name: s.name, code: s.code })),
   };
   if (p.shareName && settings.profile.name) ctx.studentName = settings.profile.name;

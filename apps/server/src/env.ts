@@ -22,10 +22,14 @@ const schema = z
       .default('true')
       .transform((v) => v === 'true'),
     AI_DAILY_LIMIT: z.coerce.number().int().min(1).default(200),
+    /** Max time (ms) one AI request may spend on Gemini, including fallbacks. Keep under your host's function timeout. */
+    AI_TIMEOUT_MS: z.coerce.number().int().min(5000).default(50_000),
     /** Web Push (VAPID). Generate with: npm run vapid -w @student-os/server */
     VAPID_PUBLIC_KEY: z.string().optional(),
     VAPID_PRIVATE_KEY: z.string().optional(),
     VAPID_SUBJECT: z.string().default('mailto:admin@example.com'),
+    /** Protects GET /api/cron/push (serverless push scheduling). Vercel Cron sends it automatically. */
+    CRON_SECRET: z.string().min(16).optional(),
     PUSH_SCHEDULER: z
       .enum(['true', 'false'])
       .default('true')

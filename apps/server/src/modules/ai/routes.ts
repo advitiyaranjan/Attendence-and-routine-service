@@ -23,6 +23,11 @@ const allowAi: RequestHandler = async (req, _res, next) => {
   next();
 };
 
+// Cheap availability check, polled on app start and when the chat opens: not rate limited.
+aiRouter.get('/status', (_req, res) => {
+  res.json({ available: ai.available });
+});
+
 aiRouter.use(
   rateLimit({
     windowMs: 60_000,
@@ -33,10 +38,6 @@ aiRouter.use(
     message: { error: { code: 'rate_limited', message: 'Too many AI requests. Please wait a minute.' } },
   }),
 );
-
-aiRouter.get('/status', (_req, res) => {
-  res.json({ available: ai.available });
-});
 
 aiRouter.use(allowAi);
 

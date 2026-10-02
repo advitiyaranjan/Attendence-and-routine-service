@@ -10,6 +10,7 @@ import { syncRouter } from './modules/sync/routes';
 import { dataRouter } from './modules/data/routes';
 import { aiRouter } from './modules/ai/routes';
 import { pushRouter } from './modules/push/routes';
+import { cronRouter } from './modules/push/cron';
 import { WebPushSender, type PushSender } from './modules/push/sender';
 
 export function createApp(opts: { pushSender?: PushSender } = {}) {
@@ -38,6 +39,7 @@ export function createApp(opts: { pushSender?: PushSender } = {}) {
   app.use('/api/sync', syncRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api', pushRouter(pushSender));
+  app.use('/api', cronRouter(pushSender));
   app.use('/api', dataRouter);
 
   app.use(notFound);

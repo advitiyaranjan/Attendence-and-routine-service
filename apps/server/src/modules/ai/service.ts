@@ -65,7 +65,6 @@ export class AIService {
       system: P.TIMETABLE_SYSTEM,
       parts,
       schema: timetableExtractionSchema,
-      temperature: 0,
     });
   }
 
@@ -76,7 +75,7 @@ export class AIService {
   async command(userId: string | null, messages: ChatMessage[], context: unknown, today: string, permissions: Partial<AIPermissions>) {
     const transcript = messages
       .slice(-16)
-      .map((m) => `${m.role === 'user' ? 'Student' : 'Copilot'}: ${m.content}`)
+      .map((m) => `${m.role === 'user' ? 'Student' : 'AI Pilot'}: ${m.content}`)
       .join('\n\n');
     const raw = await this.gemini.generateJson({
       feature: 'command',
@@ -84,7 +83,6 @@ export class AIService {
       system: P.commandSystem(today, WEEKDAYS[weekdayOf(today)]!, actionCatalog(permissions)),
       parts: [contextPart(context), { text: `CONVERSATION:\n${transcript}\n\nRespond to the student's last message.` }],
       schema: commandResponseSchema,
-      temperature: 0.3,
     });
     const { intents, rejected } = validateIntents(raw.actions, permissions);
     return { reply: raw.reply, intents, rejected, clarification: raw.clarification };
@@ -97,7 +95,6 @@ export class AIService {
       system: P.FLASHCARDS_SYSTEM,
       parts: [{ text: `Topic: ${topic}\nNumber of cards: ${count}\n${notes ? `Notes:\n${notes}` : ''}` }],
       schema: flashcardsResponseSchema,
-      temperature: 0.4,
     });
   }
 
@@ -108,7 +105,6 @@ export class AIService {
       system: P.QUIZ_SYSTEM,
       parts: [{ text: `Topic: ${topic}\nQuestions: ${count}\nDifficulty: ${difficulty}\n${notes ? `Notes:\n${notes}` : ''}` }],
       schema: quizResponseSchema,
-      temperature: 0.6,
     });
   }
 
@@ -129,7 +125,6 @@ export class AIService {
       system: P.REVIEW_SYSTEM,
       parts: [{ text: `This is a ${period} review.` }, contextPart(data)],
       schema: reviewSummarySchema,
-      temperature: 0.5,
     });
   }
 }

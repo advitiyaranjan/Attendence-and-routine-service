@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { AlertTriangle, CheckCircle2, CircleSlash, Loader2, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, Brain, CheckCircle2, CircleSlash, Loader2, ShieldCheck, X } from 'lucide-react';
 import { forwardRef, useEffect, useId, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { RISK_LABEL, type RiskLevel } from '@student-os/core';
 
@@ -8,7 +8,7 @@ export const cn = clsx;
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   icon?: ReactNode;
 }
@@ -22,10 +22,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-        size === 'sm' ? 'h-8 px-2.5 text-sm' : 'h-10 px-4 text-sm',
-        variant === 'primary' && 'bg-accent text-accent-ink hover:opacity-90',
-        variant === 'secondary' && 'border border-line bg-surface text-ink hover:bg-surface-2',
+        'inline-flex select-none items-center justify-center gap-1.5 rounded-xl font-medium transition-[background-color,opacity,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
+        size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-12 px-5 text-[15px]' : 'h-10 px-4 text-sm',
+        variant === 'primary' && 'bg-accent text-accent-ink shadow-sm hover:opacity-90',
+        variant === 'secondary' && 'border border-line bg-surface text-ink shadow-card hover:bg-surface-2',
         variant === 'ghost' && 'text-ink-2 hover:bg-surface-2 hover:text-ink',
         variant === 'danger' && 'border border-line bg-surface text-critical-ink hover:bg-surface-2',
         className,
@@ -40,7 +40,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export function Card({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('rounded-xl border border-line bg-surface p-4', className)} {...rest}>
+    <div className={cn('rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5', className)} {...rest}>
       {children}
     </div>
   );
@@ -49,7 +49,7 @@ export function Card({ className, children, ...rest }: React.HTMLAttributes<HTML
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-2">
-      <h2 className="text-sm font-semibold text-ink-2">{children}</h2>
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{children}</h2>
       {action}
     </div>
   );
@@ -58,8 +58,8 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-ink-2">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -67,8 +67,9 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
   );
 }
 
+// 16px text on phones: smaller inputs make iOS Safari zoom in on focus.
 const fieldBase =
-  'w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none';
+  'w-full rounded-xl border border-line bg-surface px-3 text-base text-ink placeholder:text-muted transition-colors focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent/15 sm:text-sm';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...rest }, ref) {
   return <input ref={ref} className={cn(fieldBase, 'h-10', className)} {...rest} />;
@@ -132,7 +133,7 @@ export function Toggle({ checked, onChange, label, description }: { checked: boo
 
 export function Badge({ children, className, style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-medium text-ink-2', className)} style={style}>
+    <span className={cn('inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-ink-2', className)} style={style}>
       {children}
     </span>
   );
@@ -183,7 +184,7 @@ export function Meter({ value, color, marker, label }: { value: number | null; c
 
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line px-6 py-10 text-center">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line px-6 py-10 text-center">
       {icon && <div className="text-muted">{icon}</div>}
       <p className="font-medium">{title}</p>
       {body && <p className="max-w-sm text-sm text-ink-2">{body}</p>}
@@ -206,12 +207,15 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
       className={cn(
-        'm-auto w-[calc(100%-2rem)] rounded-2xl border border-line bg-surface p-0 text-ink shadow-xl backdrop:bg-black/40',
-        wide ? 'max-w-3xl' : 'max-w-lg',
+        // Bottom sheet on phones, centred dialog from sm up.
+        'mx-0 mb-0 mt-auto w-full max-w-none rounded-t-3xl border border-line bg-surface p-0 text-ink shadow-pop backdrop:bg-black/40 backdrop:backdrop-blur-[2px]',
+        'sm:m-auto sm:w-[calc(100%-2rem)] sm:rounded-2xl',
+        wide ? 'sm:max-w-3xl' : 'sm:max-w-lg',
       )}
     >
       {open && (
-        <div className="flex max-h-[85vh] flex-col">
+        <div className="safe-bottom flex max-h-[88dvh] flex-col sm:max-h-[85vh]">
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-line sm:hidden" aria-hidden />
           <div className="flex items-center justify-between border-b border-line px-5 py-3">
             <h2 className="font-semibold">{title}</h2>
             <button onClick={onClose} className="rounded-md p-1 text-ink-2 hover:bg-surface-2" aria-label="Close">
@@ -228,14 +232,17 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
 
 export function Tabs<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string }> }) {
   return (
-    <div role="tablist" className="inline-flex rounded-lg border border-line bg-surface p-0.5">
+    <div role="tablist" className="no-scrollbar inline-flex max-w-full overflow-x-auto rounded-xl bg-surface-2 p-1">
       {options.map((o) => (
         <button
           key={o.value}
           role="tab"
           aria-selected={value === o.value}
           onClick={() => onChange(o.value)}
-          className={cn('rounded-md px-3 py-1 text-sm', value === o.value ? 'bg-surface-2 font-medium text-ink' : 'text-ink-2 hover:text-ink')}
+          className={cn(
+            'shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition-colors',
+            value === o.value ? 'bg-surface font-medium text-ink shadow-card' : 'text-ink-2 hover:text-ink',
+          )}
         >
           {o.label}
         </button>
@@ -246,9 +253,9 @@ export function Tabs<T extends string>({ value, onChange, options }: { value: T;
 
 export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-3">
-      <div className="text-xs text-ink-2">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
+    <div className="rounded-2xl border border-line bg-surface p-3.5 shadow-card">
+      <div className="text-xs font-medium text-ink-2">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight tabular">{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </div>
   );
@@ -282,6 +289,47 @@ export function Checkbox({ checked, onChange, label }: { checked: boolean; onCha
           <path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
+    </button>
+  );
+}
+
+/** App mark: a soft accent tile with the brain icon. */
+export function AppLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'size-14 rounded-2xl' : size === 'sm' ? 'size-8 rounded-lg' : 'size-10 rounded-xl';
+  const icon = size === 'lg' ? 'size-7' : size === 'sm' ? 'size-4' : 'size-5';
+  return (
+    <span className={cn('inline-flex shrink-0 items-center justify-center bg-accent text-accent-ink shadow-sm', box)} aria-hidden>
+      <Brain className={icon} />
+    </span>
+  );
+}
+
+/** Full-screen loading state with the app mark. */
+export function Splash({ label = 'Loading' }: { label?: string }) {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4" role="status">
+      <AppLogo size="lg" />
+      <div className="flex items-center gap-2 text-sm text-ink-2">
+        <Loader2 className="size-4 animate-spin" aria-hidden /> {label}…
+      </div>
+    </div>
+  );
+}
+
+/** Selectable pill (single or multi choice). */
+export function Chip({ selected, onClick, children, className }: { selected?: boolean; onClick: () => void; children: ReactNode; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-sm transition-colors active:scale-[0.98]',
+        selected ? 'border-accent bg-accent-soft font-medium text-ink' : 'border-line bg-surface text-ink-2 hover:border-ink-2/40 hover:text-ink',
+        className,
+      )}
+    >
+      {children}
     </button>
   );
 }

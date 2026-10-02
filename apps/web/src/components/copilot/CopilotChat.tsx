@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ReactMarkdown from 'react-markdown';
-import { AlertTriangle, Check, History, Mic, MicOff, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
+import { AlertTriangle, Bot, Check, History, Mic, MicOff, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
 import type { QuizResponse } from '@student-os/core';
-import { quiz as genQuiz } from '../../lib/ai';
+import { quiz as genQuiz, refreshAiStatus } from '../../lib/ai';
 import { errorMessage } from '../../lib/api';
 import { db } from '../../lib/db';
 import { useSettings } from '../../lib/hooks';
@@ -13,6 +13,11 @@ import { useCopilot, type CopilotMessage } from '../../lib/copilot/store';
 import type { Proposal } from '../../lib/copilot/registry';
 import { QuizRunner } from '../StudyTools';
 import { Button, Checkbox, cn, Input, Select, Textarea } from '../ui';
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
 
 export const COPILOT_SUGGESTIONS = [
   'What do I need to do today?',
@@ -319,7 +324,7 @@ function QuizLauncher({ message }: { message: CopilotMessage }) {
 function AssistantMessage({ m }: { m: CopilotMessage }) {
   const choose = useCopilot((s) => s.choose);
   return (
-    <div className="max-w-[92%] space-y-2 rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm">
+    <div className="min-w-0 max-w-[92%] animate-rise space-y-2 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm shadow-card">
       {m.content && (
         <div className="prose-sm">
           <ReactMarkdown>{m.content}</ReactMarkdown>
@@ -358,6 +363,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
   const [input, setInput] = useState('');
   const online = useApp((s) => s.online);
   const aiAvailable = useApp((s) => s.aiAvailable);
+  const aiIssue = useApp((s) => s.aiIssue);
   const settings = useSettings();
   const endRef = useRef<HTMLDivElement>(null);
   const sentInitial = useRef(false);
@@ -367,7 +373,12 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
     void load();
   }, [load]);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: 'end' });
+    // The server may have been fixed or woken up since the app started.
+    if (online && aiAvailable !== true) void refreshAiStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online]);
+  useEffect(() => {
+    if (messages.length || busy) endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages, busy]);
   useEffect(() => {
     if (initialPrompt && !sentInitial.current) {
@@ -410,27 +421,43 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           </div>
         </div>
       )}
-      {online && aiAvailable === false && <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">AI isn't configured on the server yet (missing GEMINI_API_KEY).</div>}
+      {online && aiAvailable === false && <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">{aiIssue ?? 'AI is unavailable right now.'}</div>}
       {!settings.aiPermissions.enabled && (
         <div className="mb-3 rounded-lg border border-line bg-surface p-3 text-sm text-ink-2">
-          Copilot is off. Turn it on in <Link to="/settings#ai" className="text-accent">Settings → AI permissions</Link>.
+          AI Pilot is off. Turn it on in <Link to="/settings#ai" className="text-accent">Settings → AI permissions</Link>.
         </div>
       )}
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-2">
         {messages.length === 0 && (
-          <div className={cn('grid gap-2', !compact && 'sm:grid-cols-2')}>
-            {COPILOT_SUGGESTIONS.map((s) => (
-              <button key={s} disabled={disabled} onClick={() => submit(s)} className="rounded-lg border border-line bg-surface p-2.5 text-left text-sm hover:bg-surface-2 disabled:opacity-50">
-                {s}
-              </button>
-            ))}
+          <div className="space-y-4 py-2">
+            <div className="flex items-start gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+                <Bot className="size-5" />
+              </span>
+              <div>
+                <p className="font-semibold">{greeting()}! How can I help?</p>
+                <p className="mt-0.5 text-sm text-ink-2">Ask about your day, or tell me what to add, move or plan. I'll show you every change before it happens.</p>
+              </div>
+            </div>
+            <div className={cn('grid gap-2', !compact && 'sm:grid-cols-2')}>
+              {COPILOT_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  disabled={disabled}
+                  onClick={() => submit(s)}
+                  className="rounded-2xl border border-line bg-surface p-3 text-left text-sm shadow-card transition-colors hover:border-accent/40 hover:bg-surface-2 disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="flex justify-end">
-              <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-accent px-4 py-2 text-sm text-accent-ink">{m.content}</p>
+              <p className="max-w-[85%] animate-rise whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm text-accent-ink">{m.content}</p>
             </div>
           ) : (
             <div key={m.id} className="flex justify-start">
@@ -440,22 +467,27 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
         )}
         {busy && (
           <div className="flex items-center gap-2 text-sm text-ink-2">
-            <Sparkles className="size-4 animate-pulse text-accent" /> Thinking…
+            <Sparkles className="size-4 animate-pulse text-accent" /> AI Pilot is thinking…
           </div>
         )}
         <div ref={endRef} />
       </div>
 
       <form
-        className="mt-2 flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1.5"
+        className="mt-2 flex items-end gap-1.5 rounded-2xl border border-line bg-surface p-1.5 shadow-card transition-shadow focus-within:border-accent focus-within:ring-3 focus-within:ring-accent/15"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
       >
-        <Textarea
+        <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            // Grow with the text, up to about five lines.
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
@@ -465,8 +497,8 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
           placeholder={disabled ? 'AI unavailable right now' : 'Ask anything…'}
           disabled={disabled}
           rows={1}
-          className="min-h-9 flex-1 resize-none border-0"
-          aria-label="Message Study Copilot"
+          className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 text-base text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 sm:text-sm"
+          aria-label="Message AI Pilot"
         />
         <VoiceButton
           disabled={disabled || busy}
@@ -475,7 +507,7 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
             if (final) submit(t);
           }}
         />
-        <Button type="submit" variant="primary" disabled={disabled || !input.trim()} loading={busy} aria-label="Send">
+        <Button type="submit" variant="primary" className="size-10 shrink-0 rounded-xl p-0" disabled={disabled || !input.trim()} loading={busy} aria-label="Send">
           <Send className="size-4" />
         </Button>
       </form>
@@ -494,11 +526,14 @@ export function CopilotPanel() {
   if (!open) return null;
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/30 md:bg-transparent" onClick={() => setOpen(false)} />
-      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-line bg-page p-3 shadow-2xl md:w-[440px]" aria-label="Study Copilot">
-        <div className="mb-1 flex items-center justify-between">
+      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px] md:bg-black/10" onClick={() => setOpen(false)} />
+      <aside className="safe-top safe-bottom fixed inset-y-0 right-0 z-50 flex w-full animate-rise flex-col border-l border-line bg-page px-4 pb-3 pt-3 shadow-pop md:w-[460px]" aria-label="AI Pilot">
+        <div className="mb-2 flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-semibold">
-            <Sparkles className="size-4 text-accent" /> Study Copilot
+            <span className="flex size-8 items-center justify-center rounded-xl bg-accent text-accent-ink">
+              <Bot className="size-4" />
+            </span>
+            AI Pilot
           </h2>
           <Button size="sm" variant="ghost" aria-label="Close Copilot" onClick={() => setOpen(false)}>
             <X className="size-4" />

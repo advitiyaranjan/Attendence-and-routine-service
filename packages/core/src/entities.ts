@@ -380,6 +380,8 @@ export const settingsSchema = syncMeta.extend({
   safeAttendance: percent.default(85),
   revisionIntervals: z.array(z.number().int().min(1).max(3650)).min(1).max(20).default([1, 3, 7, 30, 90, 180]),
   dailyStudyTargetMinutes: z.number().int().min(0).max(1440).default(240),
+  /** When the student prefers to study. A planning preference, not a hard rule. */
+  studyTimes: z.array(z.enum(['morning', 'afternoon', 'evening', 'night'])).max(4).default([]),
   weekStartsOn: z.union([z.literal(0), z.literal(1)]).default(1),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
   accent: z.string().max(20).default('indigo'),

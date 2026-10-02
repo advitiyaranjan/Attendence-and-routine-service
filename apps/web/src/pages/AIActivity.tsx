@@ -30,8 +30,8 @@ export default function AIActivity() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="AI activity" subtitle="Every change Study Copilot proposed, what you decided, and exactly what was modified." />
-      {logs.length === 0 && <EmptyState title="No AI activity yet" body="When you confirm something Copilot proposes, it appears here and can be undone." />}
+      <PageHeader title="AI activity" subtitle="Every change AI Pilot proposed, what you decided, and exactly what was modified." />
+      {logs.length === 0 && <EmptyState title="No AI activity yet" body="When you confirm something AI Pilot proposes, it appears here and can be undone." />}
       {groups.map((g) => (
         <section key={g}>
           <h2 className="mb-2 text-sm font-semibold text-ink-2">{g}</h2>

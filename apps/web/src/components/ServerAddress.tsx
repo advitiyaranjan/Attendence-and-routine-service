@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CheckCircle2, TriangleAlert } from 'lucide-react';
 import { apiBase, setApiBase } from '../lib/platform';
-import { useApp } from '../lib/store';
+import { refreshAiStatus } from '../lib/ai';
 import { Button, Field, Input } from './ui';
 
 /**
@@ -26,10 +26,7 @@ export function ServerAddress({ onSaved }: { onSaved?: () => void }) {
       if (!res.ok) throw new Error(String(res.status));
       setState({ ok: true, text: 'Connected to the server.' });
       // Re-check AI availability against the new server.
-      fetch(`${base}/api/ai/status`)
-        .then((r) => r.json())
-        .then((s) => useApp.setState({ aiAvailable: !!s.available }))
-        .catch(() => undefined);
+      void refreshAiStatus();
       onSaved?.();
     } catch {
       setState({ ok: false, text: "Can't reach that address. Is the server running, and is the phone on the same network?" });

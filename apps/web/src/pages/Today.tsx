@@ -14,7 +14,7 @@ import { toast, useApp } from '../lib/store';
 
 /**
  * Natural-language capture, e.g. "finish OS scheduling and solve 15 DSA questions today".
- * Goes through Study Copilot, so every change is proposed and confirmed first.
+ * Goes through AI Pilot, so every change is proposed and confirmed first.
  */
 export function NaturalTaskInput({ date }: { date: ISODate }) {
   const [text, setText] = useState('');
@@ -50,7 +50,7 @@ export function NaturalTaskInput({ date }: { date: ISODate }) {
           Create tasks
         </Button>
       </div>
-      <p className="mt-1 text-xs text-muted">{online ? 'Copilot proposes the tasks; you confirm before anything is added.' : 'AI requires an internet connection. You can still add tasks with the + button.'}</p>
+      <p className="mt-1 text-xs text-muted">{online ? 'AI Pilot proposes the tasks; you confirm before anything is added.' : 'AI requires an internet connection. You can still add tasks with the + button.'}</p>
     </Card>
   );
 }
@@ -112,7 +112,7 @@ export default function Today() {
 
       <NaturalTaskInput date={date} />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <SectionTitle>Classes</SectionTitle>
           {classes.length === 0 ? (

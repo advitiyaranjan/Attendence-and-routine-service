@@ -9,3 +9,6 @@ apps/server/uploads
 
 # Built Android packages
 release/
+
+# Vercel build output (npm run vercel-build)
+.vercel

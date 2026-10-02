@@ -3,7 +3,7 @@ import request from 'supertest';
 import { timetableExtractionSchema, type SyncOperation } from '@student-os/core';
 import { createApp } from './app';
 import { validateOperation } from './modules/sync/service';
-import { GeminiClient } from './modules/ai/gemini';
+import { GeminiClient, statusOf } from './modules/ai/gemini';
 import { HttpError } from './lib/http';
 import { signActionToken, verifyActionToken } from './modules/push/scheduler';
 
@@ -105,6 +105,29 @@ describe('Gemini output validation', () => {
     expect(generateContent.mock.calls.map((c) => c[0].model)).toEqual(['primary', 'backup']);
   });
 
+  it('reads the status code from the error body when .status is missing', () => {
+    expect(statusOf(new Error('got status: 503 {"error":{"code": 503,"message":"overloaded"}}'))).toBe(503);
+    expect(statusOf(Object.assign(new Error('x'), { status: 429 }))).toBe(429);
+    expect(statusOf(new Error('socket hang up'))).toBe(0);
+  });
+
+  it('does not try other models when the API key is rejected', async () => {
+    const client = new GeminiClient('bad', 'primary', ['backup']);
+    const generateContent = vi.fn().mockRejectedValue(Object.assign(new Error('API key not valid. Please pass a valid API key.'), { status: 400 }));
+    (client as unknown as { ai: unknown }).ai = { models: { generateContent } };
+    await expect(client.generateJson(opts)).rejects.toMatchObject({ status: 503, code: 'ai_misconfigured' });
+    expect(generateContent).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Gemini 3 default temperature and passes a request timeout', async () => {
+    const { client, generateContent } = clientReturning('{"subjects":[]}');
+    await client.generateJson(opts);
+    const config = generateContent.mock.calls[0]![0].config;
+    expect(config.temperature).toBeUndefined();
+    expect(config.httpOptions.timeout).toBeGreaterThan(0);
+    expect(config.httpOptions.timeout).toBeLessThanOrEqual(client.budgetMs);
+  });
+
   it('reports unavailability when no API key is configured', async () => {
     const client = new GeminiClient('', 'm');
     await expect(client.generateJson(opts)).rejects.toMatchObject({ status: 503 });
@@ -113,6 +136,14 @@ describe('Gemini output validation', () => {
 
 describe('HTTP security', () => {
   const app = createApp();
+
+  it('does not rate-limit the checks every app start makes', async () => {
+    for (let i = 0; i < 40; i++) {
+      const [ai, me] = await Promise.all([request(app).get('/api/ai/status'), request(app).get('/api/auth/me')]);
+      expect(ai.status).toBe(200);
+      expect(me.status).toBe(200);
+    }
+  });
 
   it('serves health checks', async () => {
     const res = await request(app).get('/api/health');

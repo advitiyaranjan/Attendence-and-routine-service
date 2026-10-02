@@ -1,6 +1,6 @@
 # Student OS
 
-An offline-first academic planner: upload your timetable once, and it tracks attendance, plans your day, schedules spaced-repetition revisions, reminds you on every device and syncs everything. Study Copilot (Gemini, via the server only) can manage the app in plain language, but every change it proposes needs your confirmation.
+An offline-first academic planner: upload your timetable once, and it tracks attendance, plans your day, schedules spaced-repetition revisions, reminds you on every device and syncs everything. AI Pilot (Gemini, via the server only) sets up your workspace with you and can manage the whole app in plain language, but every change it proposes needs your confirmation.
 
 ## Quick start
 
@@ -14,7 +14,51 @@ npm run db:deploy -w @student-os/server        # apply migrations
 npm run dev                                    # API on :4000, web on :5173
 ```
 
-The web app works without the server, in guest/local mode. All data stays in IndexedDB until you sign in.
+The app opens on a sign-in page (Google or email + password). If the server can't be reached, it offers "Use on this device only", and data stays in IndexedDB until you sign in.
+
+## User flow
+
+```
+Open app → signed in? ── no ──→ Sign in / Sign up (Google or email + password, nothing else)
+              │ yes
+              ▼
+        setup complete? ── yes ──→ Home
+              │ no (a returning user's settings arrive with the first sync, so we wait for it)
+              ▼
+     🤖 AI Pilot  or  ⚙ Manual setup   (switch any time; answers carry over)
+              ▼
+            Home
+```
+
+- **AI Pilot setup** is a chat that asks one thing at a time: timetable upload (Gemini reads PDF / image / screenshot / Excel / CSV, and you confirm before anything is saved), minimum and target attendance, optional academic details, reminders and notification permission, revision intervals, study times and daily target. Short answers like "75%", "5th sem", "15 Dec", "evening and night" or "3 hours" are understood by deterministic parsers (`apps/web/src/lib/setup-parse.ts`), so they can't be misread into wrong settings.
+- **Manual setup** is a 7-step wizard: basic info, subjects, class schedule, attendance rules, revision, notifications, study preferences. Every step can be skipped.
+- **Navigation.** Laptop: sidebar with Home, AI Pilot, Todos, Calendar, Revision, Attendance, Subjects, Notes, Exams, Analytics, Settings. Phone: bottom bar Home · AI · Todos · Calendar · **+** (add task, class, event, topic, exam, assignment, note…), with every other section under the profile button.
+- **Todos** combines today's classes, tasks, due revisions, assignments, exams and personal items, with Today / Upcoming / Overdue views and All / Study / Revision / Assignments / Personal filters. Revisions from the spaced-repetition schedule appear on their due date automatically.
+- **AI everywhere.** Home, Todos, Calendar, Revision and Attendance each have an "Ask AI…" bar with page-specific suggestions; the AI button in the header opens AI Pilot from any page (or press `.`).
+
+## Deploy to Vercel
+
+One Vercel project serves both the PWA and the API (an Express app bundled into a single serverless function by `scripts/vercel-build.mjs`, using the Build Output API).
+
+1. **Import the repo** at vercel.com/new. Keep the root directory as the repository root; `vercel.json` sets the install and build commands.
+2. **Add a database.** In the project: Storage → Create Database → Neon (Postgres) → connect it. This sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED`. Production builds apply migrations automatically (using the unpooled URL).
+3. **Set environment variables** (Settings → Environment Variables):
+
+   | Variable | Needed for | Value |
+   | --- | --- | --- |
+   | `JWT_SECRET` | sign-in (required) | 32+ random characters: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
+   | `GEMINI_API_KEY` | AI Pilot, timetable reading | a key from Google AI Studio |
+   | `GOOGLE_CLIENT_ID` | "Continue with Google" | OAuth client (Web application); add `https://<your-app>.vercel.app` to *Authorized JavaScript origins* |
+   | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | push reminders when the app is closed | `npm run vapid -w @student-os/server` |
+   | `CRON_SECRET` | push reminders on Vercel | 16+ random characters |
+   | `PUSH_CRON_SCHEDULE` | push reminders on Vercel **Pro** | `* * * * *` (Hobby allows only daily crons; instead, call `GET /api/cron/push` every minute from a free scheduler such as cron-job.org with the header `Authorization: Bearer <CRON_SECRET>`) |
+
+4. **Redeploy** (Deployments → ⋯ → Redeploy) so the variables take effect.
+5. **Check it:** `https://<your-app>.vercel.app/api/health` → `{"ok":true}`, and `/api/ai/status` → `{"available":true}`. If a variable is missing, API calls answer with a message naming it (for example `JWT_SECRET: Set a JWT_SECRET of at least 32 characters in production`) and the sign-in page shows it.
+
+The Android app works against the same deployment: set its server address to `https://<your-app>.vercel.app`.
+
+Build locally with `npm run vercel-build` (output in `.vercel/output`), or deploy from your machine with `npx vercel --prod`.
 
 | Command | What it does |
 | --- | --- |
@@ -22,6 +66,7 @@ The web app works without the server, in guest/local mode. All data stays in Ind
 | `TEST_DATABASE_URL=… npm test -w @student-os/server` | Also runs the push scheduler tests against a real (throwaway) Postgres |
 | `npm run typecheck` | TypeScript across the monorepo |
 | `npm run build` | Production builds (server bundle + PWA) |
+| `npm run vercel-build` | Vercel build output (PWA + bundled API function) in `.vercel/output` |
 | `node apps/server/scripts/e2e-sync.mjs` | End-to-end API/sync check against a running server |
 
 ## Layout
@@ -33,7 +78,7 @@ packages/core   Shared domain logic (no I/O): entity schemas, attendance math,
 apps/server     Express + Prisma/Postgres: auth, /api/sync, push scheduler + Web Push,
                 notification actions, AI command endpoint (Gemini).
 apps/web        React + Vite + Tailwind PWA, Dexie (IndexedDB), sync engine,
-                notification scheduler, service worker, Copilot, UI.
+                notification scheduler, service worker, AI Pilot, UI.
 ```
 
 ## How it works
@@ -67,7 +112,7 @@ One pure planner (`packages/core/src/notifications.ts`) decides what is due from
 
 Settings → Notifications covers sound, vibration and an optional in-app chime, plus per-category on/off and timing (e.g. classes 30/15/5 minutes before, exams 30/14/7/1 days before). It also turns push on or off for each device. On iPhone and iPad, web notifications only work after Add to Home Screen.
 
-### Study Copilot (confirmation-based AI control)
+### AI Pilot (confirmation-based AI control)
 
 ```
 message → /api/ai/command (Gemini sees only permitted actions + filtered context)
@@ -80,9 +125,10 @@ message → /api/ai/command (Gemini sees only permitted actions + filtered conte
 - **Action registry.** 26 actions, covering tasks, classes, attendance, events, plans, topics, revisions, exams, assignments, notes, reminders, flashcards, quizzes and navigation. Each has a schema, a required permission, a risk level and the systems it affects. Gemini can only emit these.
 - **No guessing.** Gemini never sees database ids. Records appear in the context with opaque refs, and the client resolves targets itself. If nothing matches, it refuses ("I couldn't find…"). If several match, it asks which one with buttons. It won't record attendance for a class that hasn't started, or invent a subject.
 - **Confirmation cards.** Each card shows exactly what changes and what else updates (calendar, reminders, attendance), plus any clashes. Cards offer **Confirm / Edit / Cancel**. Bulk changes list every affected item, with **Review** to untick items.
-- **Permissions.** Settings → AI permissions controls what Copilot can read and propose. Delete and bulk changes are off by default.
+- **Permissions.** Settings → AI permissions controls what AI Pilot can read and propose. Delete and bulk changes are off by default.
+- **Reliability.** Gemini 3 models run at their default temperature (Google warns lower values cause looping and degraded output, which showed up as broken JSON). Overloaded or unknown models fall back to the next one in `GEMINI_FALLBACK_MODELS`; a rejected API key is reported as such instead of being retried. Each request has a time budget (`AI_TIMEOUT_MS`) so serverless functions answer before they time out, and large photos are downscaled in the browser before upload (Vercel caps request bodies at 4.5 MB).
 - **History and undo.** Results offer **Undo**. *AI activity* lists every proposal and decision. Undo skips records that changed since, instead of overwriting them.
-- **Conversation.** Pending proposals are kept in the conversation, so "make it two hours" corrects the last one. Voice input works where the browser supports speech recognition. Copilot is a panel on every page (press `.`) and a full page at `/assistant`.
+- **Conversation.** Pending proposals are kept in the conversation, so "make it two hours" corrects the last one. Voice input works where the browser supports speech recognition. AI Pilot is a panel on every page (press `.` or the AI button) and a full page at `/assistant`.
 
 ## Status
 
@@ -102,7 +148,7 @@ Done:
   - custom and recurring reminders
   - notification center with history and the next 24 hours
   - per-category preferences, sound and vibration
-- Study Copilot: action registry, confirmations, clarification, permissions, AI activity history, undo, voice input
+- AI Pilot: guided setup, action registry, confirmations, clarification, permissions, AI activity history, undo, voice input
 - Email and Google auth, multi-device sync, installable PWA with an offline app shell
 
 Verified in this environment:
@@ -111,7 +157,7 @@ Verified in this environment:
 - a real Web Push delivered to headless Edge through Windows' push service while the app was closed;
 - the full UI flows in headless Edge.
 
-Copilot UI tests used canned AI responses, because no Gemini key was available.
+AI Pilot UI tests used canned AI responses, because no Gemini key was available.
 
 Not built yet:
 - **Note attachments.** Images and PDFs on notes aren't supported yet.

@@ -32,9 +32,9 @@ export interface ReviewRow {
   credits: string;
 }
 
-const blankRow = (day = 1): ReviewRow => ({ key: uuid(), name: '', code: '', faculty: '', room: '', day, start: '09:00', end: '10:00', type: 'lecture', credits: '' });
+export const blankRow = (day = 1): ReviewRow => ({ key: uuid(), name: '', code: '', faculty: '', room: '', day, start: '09:00', end: '10:00', type: 'lecture', credits: '' });
 
-function fromExtraction(x: TimetableExtraction): ReviewRow[] {
+export function fromExtraction(x: TimetableExtraction): ReviewRow[] {
   return x.subjects.map((s) => ({
     key: uuid(),
     name: s.name,
@@ -90,29 +90,93 @@ export function parseTimetableCsv(text: string): ReviewRow[] {
   return rows;
 }
 
-function sortRows(rows: ReviewRow[]) {
+export function sortRows(rows: ReviewRow[]) {
   return [...rows].sort((a, b) => a.day - b.day || timeToMinutes(a.start) - timeToMinutes(b.start));
 }
 
-function rowIssue(r: ReviewRow): string | null {
+export function rowIssue(r: ReviewRow): string | null {
   if (!r.name.trim()) return 'Subject name is required';
   if (!/^\d{2}:\d{2}$/.test(r.start) || !/^\d{2}:\d{2}$/.test(r.end)) return 'Invalid time';
   if (r.start >= r.end) return 'End must be after start';
   return null;
 }
 
+export interface TimetableSaved {
+  subjects: number;
+  classes: number;
+}
+
+/**
+ * Save confirmed rows: creates any new subjects, then one weekly class per row.
+ * With `replace`, current weekly classes end yesterday (past attendance is kept).
+ */
+export async function saveTimetableRows(rows: ReviewRow[], replace: boolean): Promise<TimetableSaved> {
+  const valid = rows.filter((r) => !rowIssue(r));
+  const existing = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
+  const subjectIds = new Map<string, string>();
+  let colorIndex = existing.length;
+  for (const r of valid) {
+    const key = r.name.trim().toLowerCase();
+    if (subjectIds.has(key)) continue;
+    const match = existing.find((s) => s.name.toLowerCase() === key || (r.code && s.code?.toLowerCase() === r.code.toLowerCase()));
+    if (match) {
+      subjectIds.set(key, match.id);
+      continue;
+    }
+    const subject = await create('subject', {
+      name: r.name.trim(),
+      code: r.code || null,
+      faculty: r.faculty || null,
+      credits: r.credits ? Number(r.credits) : null,
+      color: SUBJECT_COLORS[colorIndex++ % SUBJECT_COLORS.length],
+    });
+    subjectIds.set(key, subject.id);
+  }
+
+  const today = todayISO();
+  if (replace) {
+    // Keep history: old slots stop yesterday instead of being deleted.
+    const old = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.active && (!s.validUntil || s.validUntil >= today));
+    for (const s of old) await update('classSchedule', s.id, { validUntil: addDays(today, -1) });
+  }
+  for (const r of valid) {
+    await create('classSchedule', {
+      subjectId: subjectIds.get(r.name.trim().toLowerCase())!,
+      weekday: r.day,
+      startTime: r.start,
+      endTime: r.end,
+      room: r.room || null,
+      faculty: r.faculty || null,
+      type: r.type,
+      validFrom: replace ? today : null,
+    });
+  }
+  return { subjects: subjectIds.size, classes: valid.length };
+}
+
 /**
  * Upload → AI extraction → editable review → confirm.
  * Nothing is saved until the student confirms.
  */
-export function TimetableImport({ onDone, mode }: { onDone: () => void; mode: 'onboarding' | 'replace' }) {
-  const [rows, setRows] = useState<ReviewRow[] | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
+export function TimetableImport({
+  onDone,
+  mode,
+  initialRows,
+  initialWarnings = [],
+}: {
+  onDone: (saved: TimetableSaved) => void;
+  mode: 'onboarding' | 'replace';
+  initialRows?: ReviewRow[];
+  initialWarnings?: string[];
+}) {
+  const [rows, setRows] = useState<ReviewRow[] | null>(initialRows ?? null);
+  const [warnings, setWarnings] = useState<string[]>(initialWarnings);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [replace, setReplace] = useState(mode === 'replace');
   const fileRef = useRef<HTMLInputElement>(null);
   const aiAvailable = useApp((s) => s.aiAvailable);
+  const aiIssue = useApp((s) => s.aiIssue);
   const online = useApp((s) => s.online);
 
   async function onFile(file: File) {
@@ -162,50 +226,11 @@ export function TimetableImport({ onDone, mode }: { onDone: () => void; mode: 'o
 
   async function confirm() {
     if (!rows) return;
-    const valid = rows.filter((r) => !rowIssue(r));
     setBusy(true);
     try {
-      const existing = (await db.entity('subject').toArray()).filter((s) => !s.deletedAt);
-      const subjectIds = new Map<string, string>();
-      let colorIndex = existing.length;
-      for (const r of valid) {
-        const key = r.name.trim().toLowerCase();
-        if (subjectIds.has(key)) continue;
-        const match = existing.find((s) => s.name.toLowerCase() === key || (r.code && s.code?.toLowerCase() === r.code.toLowerCase()));
-        if (match) {
-          subjectIds.set(key, match.id);
-          continue;
-        }
-        const subject = await create('subject', {
-          name: r.name.trim(),
-          code: r.code || null,
-          faculty: r.faculty || null,
-          credits: r.credits ? Number(r.credits) : null,
-          color: SUBJECT_COLORS[colorIndex++ % SUBJECT_COLORS.length],
-        });
-        subjectIds.set(key, subject.id);
-      }
-
-      const today = todayISO();
-      if (replace) {
-        // Keep history: old slots stop yesterday instead of being deleted.
-        const old = (await db.entity('classSchedule').toArray()).filter((s) => !s.deletedAt && s.active && (!s.validUntil || s.validUntil >= today));
-        for (const s of old) await update('classSchedule', s.id, { validUntil: addDays(today, -1) });
-      }
-      for (const r of valid) {
-        await create('classSchedule', {
-          subjectId: subjectIds.get(r.name.trim().toLowerCase())!,
-          weekday: r.day,
-          startTime: r.start,
-          endTime: r.end,
-          room: r.room || null,
-          faculty: r.faculty || null,
-          type: r.type,
-          validFrom: replace ? today : null,
-        });
-      }
-      toast(`Timetable saved: ${subjectIds.size} subjects, ${valid.length} weekly classes`, 'success');
-      onDone();
+      const saved = await saveTimetableRows(rows, replace);
+      toast(`Timetable saved: ${saved.subjects} subjects, ${saved.classes} weekly classes`, 'success');
+      onDone(saved);
     } catch (err) {
       console.error(err);
       toast("Couldn't save the timetable. Please try again.", 'error');
@@ -218,7 +243,7 @@ export function TimetableImport({ onDone, mode }: { onDone: () => void; mode: 'o
     return (
       <div className="space-y-3">
         <div
-          className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-line px-6 py-10 text-center"
+          className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-line px-6 py-10 text-center"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -246,7 +271,7 @@ export function TimetableImport({ onDone, mode }: { onDone: () => void; mode: 'o
               Enter manually
             </Button>
           </div>
-          {aiAvailable === false && online && <p className="text-xs text-muted">AI isn't configured on the server — CSV and manual entry still work.</p>}
+          {aiAvailable === false && online && <p className="text-xs text-muted">{aiIssue ?? 'AI is unavailable right now.'} CSV and manual entry still work.</p>}
         </div>
         {error && (
           <p className="flex items-start gap-2 text-sm text-critical-ink">
@@ -287,7 +312,37 @@ export function TimetableImport({ onDone, mode }: { onDone: () => void; mode: 'o
         </Card>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-line">
+      {/* Phones: one card per class. */}
+      <ul className="space-y-2 md:hidden">
+        {rows.map((r, i) => (
+          <li key={r.key} className={cn('space-y-2 rounded-2xl border border-line bg-surface p-3', issues[i] && 'border-critical/40 bg-critical/5')}>
+            <div className="flex items-center gap-2">
+              <Input value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} placeholder="Subject" aria-label="Subject" className="h-9 flex-1 font-medium" />
+              <Button size="sm" variant="ghost" aria-label="Delete row" onClick={() => setRows(rows.filter((x) => x.key !== r.key))}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Select value={r.day} onChange={(e) => set(r.key, { day: Number(e.target.value) })} className="h-9" aria-label="Day">
+                {WEEKDAY_SHORT.map((d, idx) => (
+                  <option key={d} value={idx}>
+                    {d}
+                  </option>
+                ))}
+              </Select>
+              <Input type="time" value={r.start} onChange={(e) => set(r.key, { start: e.target.value })} className="h-9 px-2" aria-label="Start" />
+              <Input type="time" value={r.end} onChange={(e) => set(r.key, { end: e.target.value })} className="h-9 px-2" aria-label="End" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input value={r.faculty} onChange={(e) => set(r.key, { faculty: e.target.value })} placeholder="Faculty" aria-label="Faculty" className="h-9" />
+              <Input value={r.room} onChange={(e) => set(r.key, { room: e.target.value })} placeholder="Room" aria-label="Room" className="h-9" />
+            </div>
+            {issues[i] && <p className="text-xs text-critical-ink">{issues[i]}</p>}
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-line md:block">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-surface-2 text-left text-xs text-ink-2">
             <tr>

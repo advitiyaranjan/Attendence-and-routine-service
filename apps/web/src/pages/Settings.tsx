@@ -6,7 +6,8 @@ import { AuthForm } from '../components/AuthForm';
 import { ServerAddress } from '../components/ServerAddress';
 import { isNative } from '../lib/platform';
 import { SyncBadge } from '../components/Layout';
-import { Button, Card, cn, Field, Input, PageHeader, Select, Toggle } from '../components/ui';
+import { Button, Card, Chip, cn, Field, Input, PageHeader, Select, Toggle } from '../components/ui';
+import { STUDY_TIMES } from '../lib/setup-parse';
 import { logout } from '../lib/auth';
 import { db, kvGet } from '../lib/db';
 import { useSettings } from '../lib/hooks';
@@ -52,11 +53,8 @@ export default function Settings() {
     URL.revokeObjectURL(a.href);
   }
 
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Settings" />
-
-      <Section title="Account & sync" description="Use the app without an account, or sign in to sync across laptop, phone and tablet.">
+  const account = (
+      <Section id="account" title="Account & sync" description={user ? "Your data syncs across laptop, phone and tablet." : "Sign in to back up and sync across laptop, phone and tablet."}>
         {isNative && user && <ServerAddress />}
         {user ? (
           <div className="space-y-3">
@@ -109,9 +107,33 @@ export default function Settings() {
           </div>
         )}
       </Section>
+  );
 
-      <Section title="Profile">
-        <div className="grid gap-3 sm:grid-cols-2">
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Settings" />
+      <nav className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:mx-0 md:flex-wrap md:px-0" aria-label="Settings sections">
+        {[
+          ['profile', 'Profile'],
+          ['academic', 'Academic'],
+          ['notifications', 'Notifications'],
+          ['attendance', 'Attendance'],
+          ['study', 'Revision & study'],
+          ['ai', 'AI'],
+          ['appearance', 'Appearance'],
+          ['data', 'Privacy & data'],
+          ['account', 'Account & sync'],
+        ].map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="shrink-0 whitespace-nowrap rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-2 hover:text-ink">
+            {label}
+          </a>
+        ))}
+      </nav>
+
+      {!user && account}
+
+      <Section id="profile" title="Profile">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(['name', 'college', 'course', 'semester', 'academicYear'] as const).map((k) => (
             <Field key={k} label={{ name: 'Name', college: 'College', course: 'Course', semester: 'Semester', academicYear: 'Academic year' }[k]}>
               <Input defaultValue={s.profile[k]} onBlur={(e) => e.target.value !== s.profile[k] && save({ profile: { ...s.profile, [k]: e.target.value } })} />
@@ -120,8 +142,8 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section title="Academic calendar">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Section id="academic" title="Academic information">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Semester starts" hint="Attendance counts from this date">
             <Input type="date" value={s.semesterStart ?? ''} onChange={(e) => save({ semesterStart: e.target.value || null })} />
           </Field>
@@ -182,8 +204,8 @@ export default function Settings() {
         </Field>
       </Section>
 
-      <Section title="Attendance" description="Defaults for every subject; override per subject on the Subjects page.">
-        <div className="grid gap-3 sm:grid-cols-3">
+      <Section id="attendance" title="Attendance" description="Defaults for every subject; override per subject on the Subjects page.">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label="Minimum %">
             <Input type="number" min={0} max={100} defaultValue={s.minAttendance} onBlur={(e) => save({ minAttendance: num(e.target.value, s.minAttendance) })} />
           </Field>
@@ -196,8 +218,8 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section title="Study & revision">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Section id="study" title="Revision & study">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Daily study target (minutes)">
             <Input type="number" min={0} step={15} defaultValue={s.dailyStudyTargetMinutes} onBlur={(e) => save({ dailyStudyTargetMinutes: num(e.target.value, s.dailyStudyTargetMinutes) })} />
           </Field>
@@ -215,14 +237,23 @@ export default function Settings() {
           </Field>
         </div>
         <p className="text-xs text-muted">Changes apply to topics you log from now on.</p>
+        <Field label="Preferred study times" hint="AI Pilot uses these when planning your day." group>
+          <div className="flex flex-wrap gap-2">
+            {STUDY_TIMES.map((t) => (
+              <Chip key={t} selected={s.studyTimes.includes(t)} onClick={() => save({ studyTimes: s.studyTimes.includes(t) ? s.studyTimes.filter((x) => x !== t) : STUDY_TIMES.filter((x) => x === t || s.studyTimes.includes(x)) })}>
+                {t[0]!.toUpperCase() + t.slice(1)}
+              </Chip>
+            ))}
+          </div>
+        </Field>
       </Section>
 
       <Section id="notifications" title="Notifications" description="Choose what to be reminded about and when. Reminders work offline while the app is open; with push on, they also arrive when it's closed.">
         <NotificationSettings s={s} />
       </Section>
 
-      <Section title="Appearance">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <Section id="appearance" title="Appearance">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Theme">
             <Select value={s.theme} onChange={(e) => save({ theme: e.target.value as SettingsT['theme'] })}>
               <option value="system">System</option>
@@ -247,11 +278,11 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section id="ai" title="AI permissions" description="Gemini is reached only through our server. Control what Study Copilot can see and propose.">
+      <Section id="ai" title="AI Pilot & permissions" description="Gemini is reached only through our server. Control what AI Pilot can see and propose.">
         <AIPermissionSettings s={s} />
       </Section>
 
-      <Section title="Your data">
+      <Section id="data" title="Privacy & data" description="Your data is stored on this device and, when signed in, in your account. Export it anytime.">
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" icon={<Download className="size-4" />} onClick={() => void exportData().then(() => toast('Export downloaded', 'success'))}>
             Export all data (JSON)
@@ -271,6 +302,7 @@ export default function Settings() {
           )}
         </div>
       </Section>
+      {user && account}
     </div>
   );
 }

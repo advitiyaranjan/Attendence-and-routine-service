@@ -10,8 +10,8 @@ export default function Assistant() {
   const [params] = useSearchParams();
   const prompt = params.get('prompt');
   return (
-    <div className="flex h-[calc(100dvh-9rem)] flex-col md:h-[calc(100dvh-7rem)]">
-      <PageHeader title="Study Copilot" subtitle="Tell it what you want to get done. It proposes changes; nothing happens until you confirm." />
+    <div className="mx-auto flex h-[calc(100dvh-11rem-var(--sat)-var(--sab))] max-w-3xl flex-col md:h-[calc(100dvh-9rem)]">
+      <PageHeader title="AI Pilot" subtitle="Manage your whole workspace in plain words. Nothing changes until you confirm." />
       <div className="min-h-0 flex-1">
         <CopilotChat initialPrompt={prompt ? (PROMPTS[prompt] ?? prompt) : null} />
       </div>

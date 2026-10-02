@@ -39,7 +39,7 @@ export default function Deadlines() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Exams & deadlines" />
+      <PageHeader title="Exams & Assignments" subtitle="Countdowns, preparation and submission status." />
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Due today" value={dueToday} />
         <Stat label="Due this week" value={dueWeek} />
@@ -54,7 +54,7 @@ export default function Deadlines() {
           </Button>
         </div>
         {upcomingExams.length === 0 && <EmptyState title="No upcoming exams" />}
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {upcomingExams.map((e) => {
             const days = diffDays(today, e.date);
             const subject = e.subjectId ? subjects.get(e.subjectId) : undefined;
