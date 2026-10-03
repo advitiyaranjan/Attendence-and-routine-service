@@ -169,11 +169,26 @@ export async function startNativeGoogleSignIn() {
       await loginWithGoogle(idToken, nonce);
       return;
     } catch (err) {
-      if ((err as { code?: string }).code === 'cancelled') return;
       // Server said no (e.g. network): show that rather than opening a tab.
       if (err instanceof ApiError) throw err;
+      // Android reports a misconfigured sign-in (app not matched to its Google client) as
+      // "cancelled" right after the account is picked, so never just stop here.
+      const cancelled = (err as { code?: string }).code === 'cancelled';
+      console.warn('In-app Google sign-in failed', err);
+      toast(cancelled ? "Google sign-in didn't finish." : `Google sign-in: ${(err as Error).message ?? 'failed'}`, 'error', {
+        label: 'Use browser',
+        run: () => void openGoogleInBrowser(),
+      });
+      return;
     }
   }
+  await openGoogleInBrowser();
+}
+
+/** Fallback: Google sign-in in a Chrome tab, which returns to the app by its link. */
+async function openGoogleInBrowser() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   try {
     localStorage.setItem(NONCE_KEY, nonce);
   } catch {

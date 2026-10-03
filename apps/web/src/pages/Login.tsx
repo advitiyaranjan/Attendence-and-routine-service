@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CloudOff, RefreshCw } from 'lucide-react';
 import { AuthForm, type AuthMode } from '../components/AuthForm';
+import { Toasts } from '../components/Layout';
 import { ServerAddress } from '../components/ServerAddress';
 import { AppLogo, Button } from '../components/ui';
 import { checkServer, continueOffline } from '../lib/auth';
@@ -67,6 +68,8 @@ export function LoginPage() {
 
         <p className="mt-6 text-center text-xs text-muted">Data you already have on this device is kept and synced to your account.</p>
       </main>
+      {/* Sign-in errors (e.g. Google) are reported as toasts. */}
+      <Toasts />
     </div>
   );
 }
