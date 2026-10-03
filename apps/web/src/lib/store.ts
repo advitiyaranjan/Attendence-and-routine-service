@@ -27,6 +27,8 @@ interface AppState {
   /** The student chose to use the app on this device only because the server was unreachable. */
   localMode: boolean;
   googleClientId: string | null;
+  /** Android OAuth client; the in-app picker tries it if the web client id fails. */
+  googleAndroidClientId: string | null;
   aiAvailable: boolean | null;
   /** Why AI is unavailable, in words the student can act on. */
   aiIssue: string | null;
@@ -51,6 +53,7 @@ export const useApp = create<AppState>((set, get) => ({
   serverIssue: null,
   localMode: false,
   googleClientId: null,
+  googleAndroidClientId: null,
   aiAvailable: null,
   aiIssue: null,
   sync: { phase: 'local', lastSyncedAt: null, pending: 0, error: null, conflicts: 0 },

@@ -128,7 +128,8 @@ authRouter.post('/google', signInLimit, async (req, res) => {
   const { credential, nonce } = parseBody(z.object({ credential: z.string().min(10).max(5000), nonce: z.string().max(200).optional() }), req.body);
   let payload;
   try {
-    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: env.GOOGLE_CLIENT_ID });
+    const audience = [env.GOOGLE_CLIENT_ID, env.GOOGLE_ANDROID_CLIENT_ID].filter((x): x is string => !!x);
+    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience });
     payload = ticket.getPayload();
   } catch {
     throw new HttpError(401, 'invalid_google_token', 'Google sign-in failed. Please try again.');
@@ -160,14 +161,14 @@ authRouter.post('/logout', (_req, res) => {
 
 authRouter.get('/me', async (req, res) => {
   if (!req.userId) {
-    res.json({ user: null, googleClientId: env.GOOGLE_CLIENT_ID ?? null });
+    res.json({ user: null, googleClientId: env.GOOGLE_CLIENT_ID ?? null, googleAndroidClientId: env.GOOGLE_ANDROID_CLIENT_ID ?? null });
     return;
   }
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   if (!user) {
     clearSession(res);
-    res.json({ user: null, googleClientId: env.GOOGLE_CLIENT_ID ?? null });
+    res.json({ user: null, googleClientId: env.GOOGLE_CLIENT_ID ?? null, googleAndroidClientId: env.GOOGLE_ANDROID_CLIENT_ID ?? null });
     return;
   }
-  res.json({ user: publicUser(user), googleClientId: env.GOOGLE_CLIENT_ID ?? null });
+  res.json({ user: publicUser(user), googleClientId: env.GOOGLE_CLIENT_ID ?? null, googleAndroidClientId: env.GOOGLE_ANDROID_CLIENT_ID ?? null });
 });

@@ -19,6 +19,8 @@ const schema = z
       .default('gemini-3.7-flash,gemini-3.5-flash,gemini-3.1-flash-lite')
       .transform((v) => v.split(',').map((m) => m.trim()).filter(Boolean)),
     GOOGLE_CLIENT_ID: z.string().optional(),
+    /** Android OAuth client (package + SHA-1). Tokens issued for it are accepted too. */
+    GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
     /** Email for one-time codes, e.g. smtps://user:app-password@smtp.gmail.com:465 */
     SMTP_URL: z.string().optional(),
     MAIL_FROM: z.string().default('Student OS <no-reply@localhost>'),

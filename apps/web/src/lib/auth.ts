@@ -23,8 +23,8 @@ export async function initAuth() {
 /** Ask the server who we are. Also used by the login page's "Try again". */
 export async function checkServer(): Promise<boolean> {
   try {
-    const res = await api<{ user: User | null; googleClientId: string | null }>('/api/auth/me');
-    useApp.setState({ googleClientId: res.googleClientId, serverIssue: null });
+    const res = await api<{ user: User | null; googleClientId: string | null; googleAndroidClientId?: string | null }>('/api/auth/me');
+    useApp.setState({ googleClientId: res.googleClientId, googleAndroidClientId: res.googleAndroidClientId ?? null, serverIssue: null });
     await setSignedIn(res.user);
     return true;
   } catch (err) {
@@ -162,10 +162,18 @@ const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce:
 export async function startNativeGoogleSignIn() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const clientId = useApp.getState().googleClientId;
-  if (clientId && !nativeGoogleBroken()) {
+  const { googleClientId, googleAndroidClientId } = useApp.getState();
+  if (googleClientId && !nativeGoogleBroken()) {
     try {
-      const { idToken } = await GoogleSignIn.signIn({ serverClientId: clientId, nonce: await sha256Hex(nonce) });
+      let idToken: string;
+      try {
+        ({ idToken } = await GoogleSignIn.signIn({ serverClientId: googleClientId, nonce: await sha256Hex(nonce) }));
+      } catch (first) {
+        // Second try with the Android OAuth client id (the server accepts tokens for either).
+        if (!googleAndroidClientId) throw first;
+        console.warn('In-app Google sign-in with the web client id failed', first);
+        ({ idToken } = await GoogleSignIn.signIn({ serverClientId: googleAndroidClientId, nonce: await sha256Hex(nonce) }));
+      }
       await loginWithGoogle(idToken, nonce);
       return;
     } catch (err) {
@@ -186,7 +194,7 @@ export async function startNativeGoogleSignIn() {
   await openGoogleInBrowser();
 }
 
-const NATIVE_FAIL_KEY = 'sos-google-native-failed';
+const NATIVE_FAIL_KEY = 'sos-google-native-failed-v2';
 /** After the in-app picker fails, go straight to the browser for a day (then try the picker again). */
 function nativeGoogleBroken(): boolean {
   try {
