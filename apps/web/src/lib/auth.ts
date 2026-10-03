@@ -161,10 +161,16 @@ const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce?
  * Google's account picker inside the app. If it fails, the exact error stays on the sign-in
  * screen with a "Use browser" button (Chrome tab sign-in), instead of failing silently.
  */
+/**
+ * In-app account picker off: on this app's Google Cloud setup it fails ("[10] DEVELOPER_ERROR"),
+ * so "Continue with Google" signs in through a Chrome tab. Set to true to try the picker first.
+ */
+const IN_APP_GOOGLE = false;
+
 export async function startNativeGoogleSignIn() {
   useApp.setState({ googleNotice: null });
   const { googleClientId } = useApp.getState();
-  if (!googleClientId) return openGoogleInBrowser();
+  if (!IN_APP_GOOGLE || !googleClientId) return openGoogleInBrowser();
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   const hashed = await sha256Hex(nonce);
