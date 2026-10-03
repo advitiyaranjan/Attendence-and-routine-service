@@ -23,6 +23,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Google sign-in returns here from the Chrome tab (com.studentos.app://google?credential=…) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.studentos.app" android:host="google" />
+            </intent-filter>
+
         </activity>
 
         <!-- Tasks and reminders that ring until stopped -->

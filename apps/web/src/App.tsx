@@ -3,6 +3,7 @@ import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { AppPage, NotificationActionId } from '@student-os/core';
 import { Layout, MorePage } from './components/Layout';
+import { AppGoogleBridge } from './components/AuthForm';
 import { Spinner, Splash } from './components/ui';
 import { PAGE_PATH } from './lib/app-prefs';
 import { performNotificationAction, type ActionPayload } from './lib/notifications';
@@ -121,6 +122,8 @@ export function App() {
     void refreshAiStatus();
   }, [online]);
 
+  // Chrome tab opened by the Android app for Google sign-in.
+  if (window.location.pathname === '/app-google') return <AppGoogleBridge />;
   if (settings === undefined) return <Splash />;
   if (!user && !localMode) return authChecked ? <LoginPage /> : <Splash />;
   if (waitingForAccount) return <Splash label="Loading your workspace" />;

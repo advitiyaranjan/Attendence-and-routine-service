@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -124,12 +125,17 @@ const googleClient = env.GOOGLE_CLIENT_ID ? new OAuth2Client(env.GOOGLE_CLIENT_I
 /** Google Identity Services: the browser obtains an ID token, we verify it here. */
 authRouter.post('/google', signInLimit, async (req, res) => {
   if (!googleClient || !env.GOOGLE_CLIENT_ID) throw new HttpError(501, 'google_disabled', 'Google sign-in is not configured.');
-  const { credential } = parseBody(z.object({ credential: z.string().min(10).max(5000) }), req.body);
+  const { credential, nonce } = parseBody(z.object({ credential: z.string().min(10).max(5000), nonce: z.string().max(200).optional() }), req.body);
   let payload;
   try {
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: env.GOOGLE_CLIENT_ID });
     payload = ticket.getPayload();
   } catch {
+    throw new HttpError(401, 'invalid_google_token', 'Google sign-in failed. Please try again.');
+  }
+  // Android app sign-in (Chrome tab → app link): the token carries sha256(nonce), and only the
+  // app that started the sign-in knows the nonce, so a token caught from the link can't be used alone.
+  if (payload?.nonce && createHash('sha256').update(nonce ?? '').digest('hex') !== payload.nonce) {
     throw new HttpError(401, 'invalid_google_token', 'Google sign-in failed. Please try again.');
   }
   if (!payload?.sub || !payload.email || !payload.email_verified) {

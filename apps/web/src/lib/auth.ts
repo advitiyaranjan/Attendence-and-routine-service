@@ -1,8 +1,10 @@
 import { api, ApiError } from './api';
 import { db, kvGet, kvSet } from './db';
-import { setAuthToken } from './platform';
+import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
+import { apiBase, isNative, setAuthToken } from './platform';
 import { useSetup } from './setup';
-import { useApp, type User } from './store';
+import { toast, useApp, type User } from './store';
 import { resetSyncCursor, syncNow } from './sync';
 import { disablePush, ensurePushSubscription, flushDeliveryReports, pullReadState } from './notifications';
 
@@ -106,8 +108,8 @@ export async function confirmEmailChange(otp: OtpChallenge, code: string) {
   await kvSet(USER_KEY, res.user);
 }
 
-export async function loginWithGoogle(credential: string) {
-  const res = await api<{ user: User; token?: string }>('/api/auth/google', { body: { credential } });
+export async function loginWithGoogle(credential: string, nonce?: string) {
+  const res = await api<{ user: User; token?: string }>('/api/auth/google', { body: { credential, nonce } });
   setAuthToken(res.token);
   await setSignedIn(res.user);
 }
@@ -136,4 +138,59 @@ export async function logout(wipe: boolean) {
   }
   useApp.getState().setUser(null);
   useApp.getState().setSync({ phase: 'local' });
+}
+
+// ---------------------------------------------------------------------------
+// Google sign-in in the Android app: Chrome tab → /app-google → back via the app's link.
+
+/** The app's link that /app-google returns to (see the intent filter in AndroidManifest.xml). */
+export const APP_LINK_GOOGLE = 'com.studentos.app://google';
+const NONCE_KEY = 'sos-google-nonce';
+
+async function sha256Hex(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function startNativeGoogleSignIn() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    localStorage.setItem(NONCE_KEY, nonce);
+  } catch {
+    // Kept in memory below as well.
+  }
+  pendingNonce = nonce;
+  await Browser.open({ url: `${apiBase()}/app-google?nonce=${await sha256Hex(nonce)}` });
+}
+
+let pendingNonce: string | null = null;
+
+async function finishNativeGoogle(url: string) {
+  if (!url.startsWith(APP_LINK_GOOGLE)) return;
+  void Browser.close().catch(() => undefined);
+  const credential = new URL(url.replace(/^com\.studentos\.app:/, 'https:')).searchParams.get('credential');
+  let nonce = pendingNonce;
+  try {
+    nonce ??= localStorage.getItem(NONCE_KEY);
+    localStorage.removeItem(NONCE_KEY);
+  } catch {
+    // storage unavailable
+  }
+  pendingNonce = null;
+  if (!credential || !nonce) return;
+  try {
+    await loginWithGoogle(credential, nonce);
+  } catch (err) {
+    toast(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.', 'error');
+  }
+}
+
+/** Call once at startup: completes a Google sign-in when the Chrome tab sends us back. */
+export function listenForGoogleReturn() {
+  if (!isNative) return;
+  void App.addListener('appUrlOpen', ({ url }) => void finishNativeGoogle(url));
+  void App.getLaunchUrl().then((r) => {
+    if (r?.url) void finishNativeGoogle(r.url);
+  });
 }

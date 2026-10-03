@@ -29,11 +29,14 @@ function write(key: string, value: string | null) {
   }
 }
 
+/** The hosted Student OS (web app + API). The Android app uses it unless another server is set. */
+export const HOSTED_URL = 'https://study.advitiyaranjan.in';
+
 /** Base URL for API calls ('' = same origin, the default on the web). */
 export function apiBase(): string {
   const configured = read(API_KEY);
   if (configured) return configured;
-  return (import.meta.env.VITE_API_URL as string | undefined) ?? '';
+  return (import.meta.env.VITE_API_URL as string | undefined) ?? (isNative ? HOSTED_URL : '');
 }
 
 /** Normalise and save the server address, e.g. "192.168.1.10:4000" → "http://192.168.1.10:4000". */

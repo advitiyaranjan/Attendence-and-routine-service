@@ -32,7 +32,14 @@ export function LoginPage() {
               <CloudOff className="mt-0.5 size-4 shrink-0 text-muted" />
               {online ? serverIssue : "You're offline. Sign-in needs an internet connection."}
             </p>
-            {isNative && <ServerAddress onSaved={() => void checkServer()} />}
+            {isNative && (
+              <details className="text-xs text-ink-2">
+                <summary className="cursor-pointer select-none">Use your own server (advanced)</summary>
+                <div className="mt-2">
+                  <ServerAddress onSaved={() => void checkServer()} />
+                </div>
+              </details>
+            )}
             <div className="flex flex-wrap gap-2">
               {online && (
                 <Button
