@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CalendarEvent, RevisionSchedule, Task } from '@student-os/core';
-import { copiesOf, normTitle, scheduledKeys } from './lib/plan';
+import { copiesOf, normTitle, scheduledKeys, selfStudyMinutes } from './lib/plan';
 
 const TODAY = '2026-10-03';
 const task = (id: string, title: string, plannedDate: string | null, status: Task['status'] = 'todo') =>
@@ -37,5 +37,27 @@ describe('duplicate work', () => {
     const keys = scheduledKeys([ev('UPSC Catch-up Session 1', TODAY), ev('UPSC Catch-up Session 3', '2026-10-04')], TODAY);
     expect(keys.has(normTitle('UPSC Catch-up Session 1'))).toBe(true);
     expect(keys.has(normTitle('UPSC Catch-up Session 3'))).toBe(false);
+  });
+});
+
+describe('self study time', () => {
+  const ev = (date: string, start: string, end: string, extra: Partial<CalendarEvent> = {}) =>
+    ({ date, startTime: start, endTime: end, type: 'study', completedAt: `${date}T20:00:00Z`, deletedAt: null, ...extra }) as CalendarEvent;
+  const data = {
+    sessions: [{ date: TODAY, durationMinutes: 30 }],
+    events: [
+      ev(TODAY, '09:00', '12:00'), // completed catch-up session: counts
+      ev(TODAY, '14:00', '17:00'),
+      ev(TODAY, '18:00', '19:00', { completedAt: null }), // not done: doesn't count
+      ev(TODAY, '19:00', '20:00', { type: 'personal' }), // not study: doesn't count
+    ],
+  };
+
+  it('counts logged time and completed study sessions, not other events', () => {
+    expect(selfStudyMinutes(TODAY, TODAY, data)).toBe(30 + 180 + 180);
+  });
+
+  it('gives the week at least today’s total', () => {
+    expect(selfStudyMinutes('2026-09-27', TODAY, data)).toBe(selfStudyMinutes(TODAY, TODAY, data));
   });
 });

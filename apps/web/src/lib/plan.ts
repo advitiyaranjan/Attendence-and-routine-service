@@ -43,3 +43,22 @@ export function copiesOf(title: string, date: ISODate, data: PlanData, today: IS
 export function scheduledKeys(events: CalendarEvent[], date: ISODate): Set<string> {
   return new Set(events.filter((e) => e.date === date && !e.deletedAt).map((e) => normTitle(e.title)));
 }
+
+/**
+ * Self-study minutes between two dates (inclusive): logged study time plus completed
+ * study sessions (self study, revision and catch-up). Classes never count.
+ * Used for "today" and "this week" alike, so the two always agree.
+ */
+export function selfStudyMinutes(
+  from: ISODate,
+  to: ISODate,
+  data: { sessions: Array<{ date: ISODate; durationMinutes: number; deletedAt?: string | null }>; events: CalendarEvent[] },
+): number {
+  const logged = data.sessions.filter((s) => !s.deletedAt && s.date >= from && s.date <= to).reduce((a, s) => a + s.durationMinutes, 0);
+  const sessions = data.events
+    .filter((e) => !e.deletedAt && e.type === 'study' && e.completedAt && e.startTime && e.endTime && e.date >= from && e.date <= to)
+    .reduce((a, e) => a + Math.max(0, minutesOf(e.endTime!) - minutesOf(e.startTime!)), 0);
+  return logged + sessions;
+}
+
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));

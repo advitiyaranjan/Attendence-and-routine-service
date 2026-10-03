@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Check, Flame, ListChecks, MoreHorizontal, Repeat, Sparkles, Target, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarClock, ChartPie, Check, FilePlus2, Flame, ListChecks, MoreHorizontal, Repeat, Sparkles, Target, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
 import {
   addDays,
   HOME_SECTIONS,
@@ -25,8 +25,8 @@ import { UpNext, upNextItems } from '../components/UpNext';
 import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
-import { copiesOf, normTitle, scheduledKeys, taskDay } from '../lib/plan';
-import { toast, useApp } from '../lib/store';
+import { copiesOf, normTitle, scheduledKeys, selfStudyMinutes, taskDay } from '../lib/plan';
+import { toast } from '../lib/store';
 import { RatingButtons } from './Revision';
 
 function greeting(d: Date) {
@@ -50,8 +50,6 @@ export function Dashboard() {
   const exams = useAll('exam') ?? [];
   const assignments = useAll('assignment') ?? [];
   const [rating, setRating] = useState<RevisionSchedule | null>(null);
-  const aiAvailable = useApp((x) => x.aiAvailable);
-  const online = useApp((x) => x.online);
 
   const activeClasses = classes.filter((c) => c.status !== 'cancelled' && c.status !== 'rescheduled');
   const minutesNow = nowMinutes(now);
@@ -62,6 +60,7 @@ export function Dashboard() {
   // Today's priorities: only what is due today, overdue or undated, and not already in the
   // schedule as a session (that copy is answered there).
   const scheduled = scheduledKeys(events, today);
+  const todaysEventsAll = events.filter((e) => e.date === today && !e.deletedAt);
   // Tasks due or planned up to today, counted once (a session's task copy is in the schedule).
   const openTasks = tasks.filter((t) => t.status !== 'done' && !!taskDay(t) && taskDay(t)! <= today && !scheduled.has(normTitle(t.title)));
   const priorities = rankTasks(
@@ -80,11 +79,28 @@ export function Dashboard() {
     return [];
   };
 
-  const studyToday =
-    sessions.filter((s) => s.date === today).reduce((a, s) => a + s.durationMinutes, 0) +
-    events
-      .filter((e) => e.date === today && e.type === 'study' && e.completedAt && e.startTime && e.endTime)
-      .reduce((a, e) => a + (timeToMinutes(e.endTime!) - timeToMinutes(e.startTime!)), 0);
+  // Self study (logged time + completed study/revision/catch-up sessions); classes never count.
+  const studyToday = selfStudyMinutes(today, today, { sessions, events });
+
+  // Today's work, each piece counted once (a session's task/revision copy isn't counted again).
+  const doneOn = (iso: string | null | undefined) => iso?.slice(0, 10) === today;
+  const todayTasks = tasks.filter((t) => (t.status === 'done' ? doneOn(t.completedAt) : !!taskDay(t) && taskDay(t)! <= today) && !scheduled.has(normTitle(t.title)));
+  const todayRevisions = revisions.filter(
+    (r) => (r.status === 'done' ? doneOn(r.completedAt) : r.status === 'pending' && r.dueDate <= today) && !scheduled.has(normTitle(topicTitle(r.topicId))),
+  );
+  const todayWork = todayTasks.length + todaysEventsAll.length + todayRevisions.length;
+  const todayWorkDone = todayTasks.filter((t) => t.status === 'done').length + todaysEventsAll.filter((e) => e.completedAt).length + todayRevisions.filter((r) => r.status === 'done').length;
+
+  // Assignments: this week's and later ones plus anything still open, and how many are submitted.
+  const trackedAssignments = assignments.filter((a) => a.deadline >= addDays(today, -6) || a.status !== 'submitted');
+  const submitted = trackedAssignments.filter((a) => a.status === 'submitted').length;
+  const openDueWeek = trackedAssignments.filter((a) => a.status !== 'submitted' && a.deadline <= addDays(today, 7)).length;
+
+  // Today's attendance, only for classes that have already started.
+  const startedToday = activeClasses.filter((c) => timeToMinutes(c.startTime) <= minutesNow);
+  const presentToday = startedToday.filter((c) => c.status === 'present').length;
+  const markedToday = startedToday.filter((c) => c.status === 'present' || c.status === 'absent').length;
+  const unmarkedToday = startedToday.length - startedToday.filter((c) => c.status && c.status !== 'unsure').length;
 
   const studyDates = [
     ...sessions.map((s) => s.date),
@@ -100,17 +116,15 @@ export function Dashboard() {
   // Productivity: this week vs the 7 days before.
   const weekStart = addDays(today, -6);
   const prevStart = addDays(today, -13);
-  const studyIn = (from: string, to: string) => sessions.filter((x) => x.date >= from && x.date <= to).reduce((a, x) => a + x.durationMinutes, 0);
+  const studyIn = (from: string, to: string) => selfStudyMinutes(from, to, { sessions, events });
   const studyWeek = studyIn(weekStart, today);
   const studyPrev = studyIn(prevStart, addDays(weekStart, -1));
   const doneWeek = tasks.filter((t) => t.completedAt && t.completedAt.slice(0, 10) >= weekStart).length;
-  const doneToday = tasks.filter((t) => t.completedAt?.slice(0, 10) === today).length;
   const revisedWeek = revisions.filter((r) => r.completedAt && r.completedAt.slice(0, 10) >= weekStart).length;
   const classesLeft = activeClasses.filter((c) => timeToMinutes(c.endTime) > minutesNow).length;
   const todaysEvents = events.filter((e) => e.date === today && !e.deletedAt).sort((a, b) => (a.startTime ?? '99').localeCompare(b.startTime ?? '99'));
   const reminders = useAll('reminder') ?? [];
   const upNext = upNextItems(today, { classes, tasks, events, reminders }, settings.app.upNext);
-  const aiOn = settings.aiPermissions.enabled && online && aiAvailable !== false;
 
   const plural = (n: number, word: string, many = word + 's') => `${n} ${n === 1 ? word : many}`;
   const plan = [classesLeft && plural(classesLeft, 'class', 'classes'), openTasks.length && plural(openTasks.length, 'task'), dueRevisions.length && plural(dueRevisions.length, 'revision')].filter(Boolean) as string[];
@@ -152,27 +166,40 @@ export function Dashboard() {
               <StatCard
                 to="/todos"
                 icon={ListChecks}
-                label="Tasks"
-                value={openTasks.length}
-                sub={doneToday ? `${doneToday} done today` : 'due or planned'}
-                progress={doneToday + openTasks.length ? (doneToday / (doneToday + openTasks.length)) * 100 : undefined}
+                label="Today's tasks"
+                value={`${todayWorkDone}/${todayWork}`}
+                sub={todayWork === 0 ? 'Nothing planned' : todayWork === todayWorkDone ? 'All done 🎉' : `${todayWork - todayWorkDone} left`}
+                progress={todayWork ? (todayWorkDone / todayWork) * 100 : undefined}
               />
-              <StatCard to="/calendar" icon={CalendarDays} label="Schedule" value={classesLeft + todaysEvents.filter((e) => !e.completedAt).length} sub={`${plural(classesLeft, 'class', 'classes')} · ${plural(todaysEvents.length, 'event')}`} />
               <StatCard
                 to="/analytics"
                 icon={Target}
-                label="Study"
+                label="Self study"
                 value={formatMinutes(studyToday)}
                 sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
                 progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
               />
               <StatCard
-                to="/assistant"
-                icon={Bot}
-                label="AI Pilot"
-                value={aiOn ? 'Ready' : settings.aiPermissions.enabled ? 'Offline' : 'Off'}
-                sub={aiOn ? `${settings.aiPower[0]!.toUpperCase()}${settings.aiPower.slice(1)} power` : settings.aiPermissions.enabled ? 'Needs internet' : 'Turn on in Settings'}
-                tone={aiOn ? 'good' : 'muted'}
+                to="/deadlines"
+                icon={FilePlus2}
+                label="Assignments"
+                value={`${submitted}/${trackedAssignments.length}`}
+                sub={trackedAssignments.length === 0 ? 'None due' : openDueWeek ? `${openDueWeek} due this week` : 'submitted'}
+                progress={trackedAssignments.length ? (submitted / trackedAssignments.length) * 100 : undefined}
+              />
+              <StatCard
+                to="/attendance"
+                icon={ChartPie}
+                label="Today's attendance"
+                value={markedToday ? fmtPct((presentToday / markedToday) * 100) : '—'}
+                sub={
+                  startedToday.length === 0
+                    ? activeClasses.length
+                      ? 'No class started yet'
+                      : 'No classes today'
+                    : `${presentToday} of ${markedToday} attended${unmarkedToday ? ` · ${unmarkedToday} to mark` : ''}`
+                }
+                progress={markedToday ? (presentToday / markedToday) * 100 : undefined}
               />
             </div>
           </Slot>
