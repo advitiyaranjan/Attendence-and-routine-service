@@ -155,7 +155,7 @@ async function sha256Hex(text: string) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce: string }): Promise<{ idToken: string }> }>('GoogleSignIn');
+const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce?: string; method?: 'button' | 'sheet' | 'legacy' }): Promise<{ idToken: string }> }>('GoogleSignIn');
 
 /**
  * Google's account picker inside the app. If it fails, the exact error stays on the sign-in
@@ -163,25 +163,28 @@ const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce:
  */
 export async function startNativeGoogleSignIn() {
   useApp.setState({ googleNotice: null });
-  const { googleClientId, googleAndroidClientId } = useApp.getState();
+  const { googleClientId } = useApp.getState();
   if (!googleClientId) return openGoogleInBrowser();
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   const hashed = await sha256Hex(nonce);
   const errors: string[] = [];
-  // The web client id is what Google documents; the Android client id is a second try.
-  for (const [label, serverClientId] of [['web client', googleClientId], ['Android client', googleAndroidClientId]] as const) {
-    if (!serverClientId) continue;
+  // Some phones fail one of Google's in-app methods (e.g. "[16] Account reauth failed"
+  // from the Sign in with Google picker) while another works, so try them in turn.
+  for (const method of ['button', 'sheet', 'legacy'] as const) {
     let idToken: string;
     try {
-      ({ idToken } = await GoogleSignIn.signIn({ serverClientId, nonce: hashed }));
+      ({ idToken } = await GoogleSignIn.signIn({ serverClientId: googleClientId, nonce: hashed, method }));
     } catch (err) {
-      console.warn(`In-app Google sign-in (${label}) failed`, err);
-      errors.push(`${label}: ${(err as Error).message || 'failed'}`);
+      const message = (err as Error).message || 'failed';
+      console.warn(`In-app Google sign-in (${method}) failed`, err);
+      // The classic chooser closed by the student (12501): a real "back", so stop quietly.
+      if (method === 'legacy' && /\[12501\]/.test(message)) return;
+      errors.push(`${method}: ${message}`);
       continue;
     }
-    // Server problems (e.g. network) are shown as they are.
-    await loginWithGoogle(idToken, nonce);
+    // The classic method can't carry the nonce; the server only checks it when present.
+    await loginWithGoogle(idToken, method === 'legacy' ? undefined : nonce);
     return;
   }
   useApp.setState({ googleNotice: `In-app Google sign-in didn't work. ${errors.join(' | ')}` });
