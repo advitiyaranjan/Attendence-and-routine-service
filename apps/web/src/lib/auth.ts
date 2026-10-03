@@ -2,6 +2,7 @@ import { api, ApiError } from './api';
 import { db, kvGet, kvSet } from './db';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
+import { registerPlugin } from '@capacitor/core';
 import { apiBase, isNative, setAuthToken } from './platform';
 import { useSetup } from './setup';
 import { toast, useApp, type User } from './store';
@@ -152,9 +153,27 @@ async function sha256Hex(text: string) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce: string }): Promise<{ idToken: string }> }>('GoogleSignIn');
+
+/**
+ * Google's account picker inside the app; falls back to a Chrome tab when the phone
+ * can't show it (no Google Play services, older app build...).
+ */
 export async function startNativeGoogleSignIn() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const clientId = useApp.getState().googleClientId;
+  if (clientId) {
+    try {
+      const { idToken } = await GoogleSignIn.signIn({ serverClientId: clientId, nonce: await sha256Hex(nonce) });
+      await loginWithGoogle(idToken, nonce);
+      return;
+    } catch (err) {
+      if ((err as { code?: string }).code === 'cancelled') return;
+      // Server said no (e.g. network): show that rather than opening a tab.
+      if (err instanceof ApiError) throw err;
+    }
+  }
   try {
     localStorage.setItem(NONCE_KEY, nonce);
   } catch {
