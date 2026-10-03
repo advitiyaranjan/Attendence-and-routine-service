@@ -163,7 +163,7 @@ export async function startNativeGoogleSignIn() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   const clientId = useApp.getState().googleClientId;
-  if (clientId) {
+  if (clientId && !nativeGoogleBroken()) {
     try {
       const { idToken } = await GoogleSignIn.signIn({ serverClientId: clientId, nonce: await sha256Hex(nonce) });
       await loginWithGoogle(idToken, nonce);
@@ -171,18 +171,37 @@ export async function startNativeGoogleSignIn() {
     } catch (err) {
       // Server said no (e.g. network): show that rather than opening a tab.
       if (err instanceof ApiError) throw err;
-      // Android reports a misconfigured sign-in (app not matched to its Google client) as
-      // "cancelled" right after the account is picked, so never just stop here.
-      const cancelled = (err as { code?: string }).code === 'cancelled';
+      const detail = (err as Error).message ?? '';
       console.warn('In-app Google sign-in failed', err);
-      toast(cancelled ? "Google sign-in didn't finish." : `Google sign-in: ${(err as Error).message ?? 'failed'}`, 'error', {
-        label: 'Use browser',
-        run: () => void openGoogleInBrowser(),
-      });
-      return;
+      // A real "back" tap on the picker: stop. Anything else (including the "cancelled"
+      // Android reports when the app isn't matched to its Google client) → browser sign-in.
+      if (/user canceled|user cancelled|TYPE_USER_CANCELED/i.test(detail) && !/\[\d+\]/.test(detail)) {
+        toast("Google sign-in didn't finish.", 'error', { label: 'Use browser', run: () => void openGoogleInBrowser() });
+        return;
+      }
+      markNativeGoogleBroken(detail);
+      toast(`Signing in through the browser (in-app: ${detail || 'failed'})`, 'success');
     }
   }
   await openGoogleInBrowser();
+}
+
+const NATIVE_FAIL_KEY = 'sos-google-native-failed';
+/** After the in-app picker fails, go straight to the browser for a day (then try the picker again). */
+function nativeGoogleBroken(): boolean {
+  try {
+    const at = Number(JSON.parse(localStorage.getItem(NATIVE_FAIL_KEY) ?? 'null')?.at ?? 0);
+    return Date.now() - at < 24 * 3600_000;
+  } catch {
+    return false;
+  }
+}
+function markNativeGoogleBroken(detail: string) {
+  try {
+    localStorage.setItem(NATIVE_FAIL_KEY, JSON.stringify({ at: Date.now(), detail }));
+  } catch {
+    // storage unavailable
+  }
 }
 
 /** Fallback: Google sign-in in a Chrome tab, which returns to the app by its link. */

@@ -67,8 +67,9 @@ public class GoogleSignInPlugin extends Plugin {
 
                 @Override
                 public void onError(@NonNull GetCredentialException e) {
-                    if (e instanceof GetCredentialCancellationException) call.reject("Cancelled", "cancelled");
-                    else call.reject(e.getMessage() == null ? "Google sign-in failed" : e.getMessage(), "failed", e);
+                    // Keep Google's own wording: "[16] Account reauth failed", "[28444] Developer console is not set up correctly", ...
+                    String detail = e.getType() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+                    call.reject(detail, e instanceof GetCredentialCancellationException ? "cancelled" : "failed", e);
                 }
             }
         );
