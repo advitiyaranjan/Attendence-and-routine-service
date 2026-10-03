@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { BellRing, Plus, X } from 'lucide-react';
+import { AlarmClock, BellRing, Plus, X } from 'lucide-react';
 import { NOTIFICATION_CATEGORY_LABEL, WEEKDAYS, type NotificationCategory, type NotificationSettings as NS, type Settings } from '@student-os/core';
 import { disablePush, enablePush, notificationsSupported, pushState, requestNotificationPermission, sendTestNotification, type PushState } from '../../lib/notifications';
-import { exactAlarmStatus, nativePermission, openExactAlarmSettings, requestNativePermission, reschedule } from '../../lib/native';
+import { exactAlarmStatus, nativePermission, openExactAlarmSettings, openRingFullScreenSettings, requestNativePermission, reschedule, ringFullScreenAllowed, testRing } from '../../lib/native';
 import { isNative } from '../../lib/platform';
 import { saveSettings } from '../../lib/repo';
 import { useApp } from '../../lib/store';
@@ -170,6 +170,56 @@ function NativeStatus() {
   );
 }
 
+type RingCategory = NS['ring'][number];
+const RING_CATEGORIES: RingCategory[] = ['tasks', 'reminders', 'studySessions', 'revision', 'assignments', 'exams', 'classes', 'attendance'];
+
+/** Android: which reminders ring like an alarm until stopped. */
+function RingSettings({ n, save }: { n: NS; save: (patch: Partial<NS>) => void }) {
+  const [fullScreen, setFullScreen] = useState(true);
+  useEffect(() => {
+    const check = () => void ringFullScreenAllowed().then(setFullScreen);
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
+  }, []);
+  const toggle = (c: RingCategory, on: boolean) => {
+    // Saving re-plans the phone's alarms (data listener in lib/native).
+    save({ ring: on ? [...new Set([...n.ring, c])] : n.ring.filter((x) => x !== c) });
+  };
+  return (
+    <div className="rounded-lg border border-line p-3">
+      <div className="flex items-start gap-2">
+        <AlarmClock className="mt-0.5 size-4 shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">Ring until stopped</div>
+          <p className="text-xs text-ink-2">
+            These ring like an alarm (alarm volume, even on silent) and show a full-screen alarm until you press Stop, Snooze or Complete. Stops by itself after 30 minutes.
+          </p>
+        </div>
+      </div>
+      {!n.sound && <p className="mt-2 text-xs text-critical-ink">Turn on “Notification sound” below for alarms to ring.</p>}
+      <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
+        {RING_CATEGORIES.map((c) => (
+          <Toggle key={c} checked={n.ring.includes(c)} onChange={(v) => toggle(c, v)} label={NOTIFICATION_CATEGORY_LABEL[c]} />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={() => void testRing()}>
+          Test alarm
+        </Button>
+        {!fullScreen && (
+          <>
+            <Button size="sm" variant="primary" onClick={() => void openRingFullScreenSettings()}>
+              Allow full-screen alarms
+            </Button>
+            <span className="text-xs text-muted">Without it the alarm still rings, but shows as a notification instead of taking over the lock screen.</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function NotificationSettings({ s }: { s: Settings }) {
   const n = s.notifications;
   const user = useApp((x) => x.user);
@@ -228,6 +278,8 @@ export function NotificationSettings({ s }: { s: Settings }) {
           On iPhone/iPad, add Student OS to your Home Screen first (Share → Add to Home Screen) — iOS only delivers web notifications to installed apps.
         </p>
       </div>
+
+      {isNative && <RingSettings n={n} save={saveN} />}
 
       <div className="grid gap-x-6 sm:grid-cols-2">
         <Toggle checked={n.sound} onChange={(v) => saveN({ sound: v })} label="Notification sound" description="Volume and tone are controlled by your device." />

@@ -1,14 +1,17 @@
 /**
- * Todos: every actionable thing in one list — today's classes, tasks, due
- * revisions, assignments and personal items. Revisions created by the
- * spaced-repetition schedule appear here automatically on their due date.
+ * Todos: every actionable thing in one list — today's classes, tasks, study and
+ * catch-up sessions, due revisions, assignments and personal items, each listed
+ * once. Revisions created by the spaced-repetition schedule appear here
+ * automatically on their due date. Every row has feedback: done, not done,
+ * reschedule or cancel.
  */
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { BookOpenCheck, CalendarClock, CheckSquare, ClipboardList, FilePlus2, Plus, Repeat, UserRound } from 'lucide-react';
+import { BookOpenCheck, CalendarClock, CheckSquare, ClipboardList, FilePlus2, Plus, Repeat, Timer, UserRound } from 'lucide-react';
 import { addDays, diffDays, formatTime12, rankTasks, type RecallRating, type RevisionSchedule, type Task } from '@student-os/core';
 import { AskAI } from '../components/AskAI';
 import { ClassRow } from '../components/ClassRow';
+import { complete, completeTarget, FeedbackButton, type FeedbackTarget } from '../components/ItemFeedback';
 import { Card, Checkbox, Chip, cn, EmptyState, Modal, PageHeader, SubjectDot, Tabs } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useOccurrences, useSubjectMap, useToday } from '../lib/hooks';
@@ -24,7 +27,7 @@ const isPersonal = (t: Task) => PERSONAL.has(t.category);
 
 interface Item {
   key: string;
-  kind: 'task' | 'revision' | 'assignment' | 'exam';
+  kind: 'task' | 'session' | 'revision' | 'assignment' | 'exam';
   title: string;
   date: string | null;
   time?: string | null;
@@ -34,9 +37,41 @@ interface Item {
   task?: Task;
   revision?: RevisionSchedule;
   meta?: string;
+  target: FeedbackTarget;
+  /** Duplicates folded into this row; feedback applies to them too. */
+  also?: FeedbackTarget[];
 }
 
-const KIND_ICON = { task: CheckSquare, revision: Repeat, assignment: FilePlus2, exam: ClipboardList } as const;
+const KIND_ICON = { task: CheckSquare, session: Timer, revision: Repeat, assignment: FilePlus2, exam: ClipboardList } as const;
+
+/** Missed study sessions stay on the list this long, so they can be rescheduled or cancelled. */
+const SESSION_LOOKBACK = 14;
+
+/**
+ * The same piece of work can exist twice (e.g. a "Study Maths" task and a "Study Maths"
+ * session, or a "Revise X" task next to the scheduled revision). Keep one per title and day,
+ * preferring the scheduled one; feedback on the row applies to the copies too.
+ */
+const KIND_RANK = { session: 0, revision: 1, assignment: 2, exam: 3, task: 4 } as const;
+const normTitle = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/^(revise|revision|catch up)\b:?\s*/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+function dedupe(items: Item[]): Item[] {
+  const groups = new Map<string, Item[]>();
+  for (const i of items) {
+    const key = i.kind === 'exam' ? i.key : `${normTitle(i.title)}|${i.date ?? ''}`;
+    groups.set(key, [...(groups.get(key) ?? []), i]);
+  }
+  return [...groups.values()].map((group) => {
+    // An open copy wins over a finished one, so nothing unfinished is hidden behind a tick.
+    const [main, ...rest] = [...group].sort((a, b) => Number(a.done) - Number(b.done) || KIND_RANK[a.kind] - KIND_RANK[b.kind]);
+    return rest.length ? { ...main!, also: rest.filter((i) => !i.done).map((i) => i.target) } : main!;
+  });
+}
 
 function dayLabel(date: string, today: string) {
   const d = diffDays(today, date);
@@ -55,22 +90,49 @@ export default function Todos() {
   const topics = useAll('topic') ?? [];
   const assignments = useAll('assignment') ?? [];
   const exams = useAll('exam') ?? [];
+  const events = useAll('calendarEvent') ?? [];
   const [view, setView] = useState<View>('today');
   const [filter, setFilter] = useState<Filter>('all');
   const [rating, setRating] = useState<RevisionSchedule | null>(null);
+  const [ratingAlso, setRatingAlso] = useState<FeedbackTarget[]>([]);
   const [title, setTitle] = useState('');
 
   const topicTitle = (id: string) => topics.find((t) => t.id === id)?.title ?? 'Topic';
   const horizon = addDays(today, 14);
 
   // Build one list of everything actionable.
-  const items: Item[] = [
+  const sessionFrom = addDays(today, -SESSION_LOOKBACK);
+  const items: Item[] = dedupe([
     ...rankTasks(tasks, today).map(
-      (t): Item => ({ key: `t${t.id}`, kind: 'task', title: t.title, date: t.plannedDate ?? t.dueDate, time: t.dueTime, subjectId: t.subjectId, done: false, personal: isPersonal(t), task: t }),
+      (t): Item => ({ key: `t${t.id}`, kind: 'task', title: t.title, date: t.plannedDate ?? t.dueDate, time: t.dueTime, subjectId: t.subjectId, done: false, personal: isPersonal(t), task: t, target: { kind: 'task', task: t } }),
     ),
     ...tasks
       .filter((t) => t.status === 'done' && t.completedAt?.slice(0, 10) === today)
-      .map((t): Item => ({ key: `t${t.id}`, kind: 'task', title: t.title, date: today, subjectId: t.subjectId, done: true, personal: isPersonal(t), task: t })),
+      .map((t): Item => ({ key: `t${t.id}`, kind: 'task', title: t.title, date: today, subjectId: t.subjectId, done: true, personal: isPersonal(t), task: t, target: { kind: 'task', task: t } })),
+    // Study and catch-up sessions, plus personal plans. Missed study sessions stay (as overdue)
+    // until answered; other events simply pass.
+    ...events
+      .filter((e) =>
+        e.completedAt
+          ? e.completedAt.slice(0, 10) === today || e.date === today
+          : e.type === 'study'
+            ? e.date >= sessionFrom
+            : e.date >= today,
+      )
+      .map(
+        (e): Item => ({
+          key: `e${e.id}`,
+          kind: 'session',
+          title: e.title,
+          date: e.completedAt ? today : e.date,
+          time: e.startTime,
+          subjectId: e.subjectId,
+          done: !!e.completedAt,
+          personal: e.type !== 'study',
+          meta: e.type === 'study' ? (e.title.startsWith('Catch up') ? 'Catch-up session' : 'Study session') : e.type === 'reminder' ? 'Reminder' : e.type === 'personal' ? 'Personal' : 'Event',
+          target: { kind: 'event', event: e },
+        }),
+      ),
     ...revisions
       .filter((r) => r.status === 'pending' || (r.status === 'done' && r.completedAt?.slice(0, 10) === today))
       .map(
@@ -83,17 +145,18 @@ export default function Todos() {
           done: r.status === 'done',
           revision: r,
           meta: `Revision ${r.stage}`,
+          target: { kind: 'revision', revision: r, title: `Revise ${topicTitle(r.topicId)}` },
         }),
       ),
     ...assignments.map(
-      (a): Item => ({ key: `a${a.id}`, kind: 'assignment', title: a.title, date: a.deadline, time: a.deadlineTime, subjectId: a.subjectId, done: a.status === 'submitted', meta: a.status === 'in_progress' ? 'In progress' : undefined }),
+      (a): Item => ({ key: `a${a.id}`, kind: 'assignment', title: a.title, date: a.deadline, time: a.deadlineTime, subjectId: a.subjectId, done: a.status === 'submitted', meta: a.status === 'in_progress' ? 'In progress' : undefined, target: { kind: 'assignment', assignment: a } }),
     ),
-    ...exams.map((e): Item => ({ key: `x${e.id}`, kind: 'exam', title: e.title, date: e.date, time: e.startTime, subjectId: e.subjectId, done: e.date < today })),
-  ];
+    ...exams.map((e): Item => ({ key: `x${e.id}`, kind: 'exam', title: e.title, date: e.date, time: e.startTime, subjectId: e.subjectId, done: e.date < today, target: { kind: 'exam', exam: e } })),
+  ]);
 
   const matches = (i: Item) =>
     filter === 'all' ||
-    (filter === 'study' && i.kind === 'task' && !i.personal) ||
+    (filter === 'study' && (i.kind === 'task' || i.kind === 'session') && !i.personal) ||
     (filter === 'revision' && i.kind === 'revision') ||
     (filter === 'assignments' && (i.kind === 'assignment' || i.kind === 'exam')) ||
     (filter === 'personal' && !!i.personal);
@@ -103,19 +166,20 @@ export default function Todos() {
   const todayItems = visible.filter((i) => (i.date ? i.date <= today : i.kind === 'task') && !(i.kind === 'assignment' && i.done && i.date !== today) && !(i.kind === 'exam' && i.date !== today));
   const upcoming = visible.filter((i) => !i.done && i.date && i.date > today && i.date <= horizon);
 
-  async function toggleTask(t: Task, done: boolean) {
-    await update('task', t.id, done ? { status: 'done', completedAt: new Date().toISOString() } : { status: 'todo', completedAt: null });
-    if (done) toast(`Completed: ${t.title}`, 'success', { label: 'Undo', run: () => void update('task', t.id, { status: 'todo', completedAt: null }) });
-  }
-
   async function check(i: Item, value: boolean) {
-    if (i.kind === 'task' && i.task) return toggleTask(i.task, value);
-    if (i.kind === 'revision' && i.revision && value) return setRating(i.revision);
-    if (i.kind === 'assignment') {
-      const id = i.key.slice(1);
-      await update('assignment', id, { status: value ? 'submitted' : 'todo' });
-      if (value) toast(`Submitted: ${i.title}`, 'success', { label: 'Undo', run: () => void update('assignment', id, { status: 'todo' }) });
+    if (i.kind === 'revision' && i.revision) {
+      if (value) {
+        setRating(i.revision);
+        setRatingAlso(i.also ?? []);
+      }
+      return;
     }
+    if (value) return completeTarget(i.target, i.also);
+    // Unticking: back to open.
+    const t = i.target;
+    if (t.kind === 'task') await update('task', t.task.id, { status: 'todo', completedAt: null });
+    if (t.kind === 'event') await update('calendarEvent', t.event.id, { completedAt: null });
+    if (t.kind === 'assignment') await update('assignment', t.assignment.id, { status: 'todo' });
   }
 
   async function addTask(e: React.FormEvent) {
@@ -155,7 +219,8 @@ export default function Todos() {
             {i.time && <span>{formatTime12(i.time)}</span>}
           </div>
         </div>
-        <Icon className="mt-0.5 size-4 shrink-0 text-muted/70" aria-hidden />
+        <Icon className="mt-1.5 size-4 shrink-0 text-muted/70" aria-hidden />
+        <FeedbackButton target={i.target} also={i.also} className="-my-1 -mr-1.5" />
       </li>
     );
   };
@@ -174,10 +239,11 @@ export default function Todos() {
   const groups =
     view === 'today'
       ? [
+          section('Study sessions', <Timer className="size-3.5" />, todayItems.filter((i) => i.kind === 'session' && !i.personal)),
           section('Tasks', <CheckSquare className="size-3.5" />, todayItems.filter((i) => i.kind === 'task' && !i.personal)),
           section('Revision', <Repeat className="size-3.5" />, todayItems.filter((i) => i.kind === 'revision')),
           section('Assignments & exams', <ClipboardList className="size-3.5" />, todayItems.filter((i) => i.kind === 'assignment' || i.kind === 'exam')),
-          section('Personal', <UserRound className="size-3.5" />, todayItems.filter((i) => i.kind === 'task' && i.personal)),
+          section('Personal', <UserRound className="size-3.5" />, todayItems.filter((i) => (i.kind === 'task' || i.kind === 'session') && i.personal)),
         ]
       : view === 'overdue'
         ? [section('Overdue', <CalendarClock className="size-3.5" />, overdue, true)]
@@ -262,6 +328,7 @@ export default function Todos() {
         <RatingButtons
           onRate={async (r: RecallRating) => {
             const msg = await completeRevision(rating!, r);
+            for (const t of ratingAlso) await complete(t);
             toast(msg, 'success');
             setRating(null);
           }}

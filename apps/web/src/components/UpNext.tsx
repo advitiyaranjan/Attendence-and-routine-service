@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { AlarmClock, AlertTriangle, CalendarClock, Check, ChevronLeft, ChevronRight, Clock, ListChecks, MapPin } from 'lucide-react';
+import { AlarmClock, AlertTriangle, CalendarClock, Check, ChevronLeft, ChevronRight, Clock, ListChecks, MapPin, MessageSquareMore } from 'lucide-react';
 import {
   fmtPct,
   formatMinutes,
@@ -16,7 +16,7 @@ import {
   type Task,
 } from '@student-os/core';
 import { update } from '../lib/repo';
-import { toast } from '../lib/store';
+import { completeTarget, FeedbackSheet, type FeedbackTarget } from './ItemFeedback';
 import { cn } from './ui';
 
 type Item =
@@ -100,7 +100,8 @@ export function UpNext({
   };
 
   const onPointerDown = (e: ReactPointerEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    // Buttons, and the feedback sheet (React events bubble out of its portal-less <dialog>).
+    if ((e.target as HTMLElement).closest('button, dialog')) return;
     startX.current = e.clientX;
     e.currentTarget.setPointerCapture(e.pointerId);
   };
@@ -125,6 +126,7 @@ export function UpNext({
       aria-label="Up next today"
       tabIndex={0}
       onKeyDown={(e) => {
+        if ((e.target as HTMLElement).closest('dialog')) return;
         if (e.key === 'ArrowRight') go(1);
         if (e.key === 'ArrowLeft') go(-1);
       }}
@@ -225,12 +227,7 @@ function Slide({ item, minutesNow, subjects, attendanceFor, today }: { item: Ite
           {task.estimatedMinutes ? <span>~{formatMinutes(task.estimatedMinutes)}</span> : null}
           {until}
         </Meta>
-        <DoneButton
-          onClick={() => {
-            void update('task', task.id, { status: 'done', completedAt: new Date().toISOString() });
-            toast(`Completed: ${task.title}`, 'success', { label: 'Undo', run: () => void update('task', task.id, { status: 'todo', completedAt: null }) });
-          }}
-        />
+        <Actions target={{ kind: 'task', task }} />
       </>
     );
   }
@@ -249,6 +246,7 @@ function Slide({ item, minutesNow, subjects, attendanceFor, today }: { item: Ite
           {event.subjectId && subjects.get(event.subjectId) && <span>{subjects.get(event.subjectId)!.name}</span>}
           {until}
         </Meta>
+        <Actions target={{ kind: 'event', event }} />
       </>
     );
   }
@@ -274,5 +272,19 @@ function DoneButton({ onClick }: { onClick: () => void }) {
     <button onClick={onClick} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium hover:bg-white/25">
       <Check className="size-4" /> Mark done
     </button>
+  );
+}
+
+/** "Mark done" plus the full feedback (not done, reschedule, cancel). */
+function Actions({ target }: { target: FeedbackTarget }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-wrap gap-2">
+      <DoneButton onClick={() => void completeTarget(target)} />
+      <button onClick={() => setOpen(true)} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium hover:bg-white/25">
+        <MessageSquareMore className="size-4" /> Didn't happen?
+      </button>
+      <FeedbackSheet target={open ? target : null} onClose={() => setOpen(false)} />
+    </div>
   );
 }

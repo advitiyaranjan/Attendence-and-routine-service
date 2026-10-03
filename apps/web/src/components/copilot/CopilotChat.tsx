@@ -14,7 +14,7 @@ import { ACCEPT, formatSize, MAX_FILES, MAX_TOTAL_BYTES, prepareAttachment, type
 import type { Proposal } from '../../lib/copilot/registry';
 import { inAppHref, linkifySettings } from '../../lib/copilot/links';
 import { QuizRunner } from '../StudyTools';
-import { Button, Checkbox, cn, Input, Select, Textarea } from '../ui';
+import { Button, Checkbox, cn, Input, isOverlayEntry, Select, Textarea, useBackToClose } from '../ui';
 
 function greeting() {
   const h = new Date().getHours();
@@ -383,8 +383,7 @@ function useOpenFromChat() {
   const navigate = useNavigate();
   const setOpen = useCopilot((s) => s.setOpen);
   return (to: string) => {
-    const panelEntry = (window.history.state as { copilot?: boolean } | null)?.copilot === true;
-    navigate(to, { replace: panelEntry });
+    navigate(to, { replace: isOverlayEntry() });
     setOpen(false);
   };
 }
@@ -765,23 +764,15 @@ export function CopilotPanel() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setOpen]);
   // Phone/browser back closes the panel instead of leaving the page.
+  useBackToClose(open, () => setOpen(false));
   useEffect(() => {
     if (!open) return;
-    window.history.pushState({ ...(window.history.state as object), copilot: true }, '');
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    let popped = false;
-    const onPop = () => {
-      popped = true;
-      setOpen(false);
-    };
-    window.addEventListener('popstate', onPop);
     return () => {
       document.body.style.overflow = prevOverflow;
-      window.removeEventListener('popstate', onPop);
-      if (!popped && (window.history.state as { copilot?: boolean } | null)?.copilot) window.history.back();
     };
-  }, [open, setOpen]);
+  }, [open]);
   if (!open) return null;
   return (
     <>

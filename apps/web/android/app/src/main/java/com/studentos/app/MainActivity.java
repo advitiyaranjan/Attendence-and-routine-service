@@ -1,5 +1,14 @@
 package com.studentos.app;
 
-import com.getcapacitor.BridgeActivity;
+import android.os.Bundle;
 
-public class MainActivity extends BridgeActivity {}
+import com.getcapacitor.BridgeActivity;
+import com.studentos.app.alarm.TaskAlarmPlugin;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(TaskAlarmPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}

@@ -221,10 +221,61 @@ export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; ti
   );
 }
 
-export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null);
+/*
+ * Back gesture for overlays (modals, sheets, panels). Each open overlay owns one history
+ * entry; back closes the top-most one only. When an overlay closes and another opens in the
+ * same tick (the + menu → a form), the entry is handed over instead of popped: popping it
+ * asynchronously would land after the new overlay's push and close it straight away.
+ */
+const overlays: Array<{ popped: boolean; close: () => void }> = [];
+let pendingBack: ReturnType<typeof setTimeout> | null = null;
+let ignorePops = 0;
+export const isOverlayEntry = () => !!(window.history.state as { overlay?: boolean } | null)?.overlay;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    if (ignorePops > 0) {
+      ignorePops--;
+      return;
+    }
+    const top = overlays.pop();
+    if (!top) return;
+    top.popped = true;
+    top.close();
+  });
+}
+
+export function useBackToClose(open: boolean, onClose: () => void) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    if (pendingBack) {
+      clearTimeout(pendingBack);
+      pendingBack = null;
+    } else {
+      window.history.pushState({ ...(window.history.state as object), overlay: true }, '');
+    }
+    const entry = { popped: false, close: () => closeRef.current() };
+    overlays.push(entry);
+    return () => {
+      const i = overlays.indexOf(entry);
+      if (i >= 0) overlays.splice(i, 1);
+      if (entry.popped) return;
+      if (pendingBack) clearTimeout(pendingBack);
+      pendingBack = setTimeout(() => {
+        pendingBack = null;
+        // Skipped when the student navigated meanwhile (that replaced the overlay entry).
+        if (!isOverlayEntry()) return;
+        ignorePops++;
+        window.history.back();
+      }, 0);
+    };
+  }, [open]);
+}
+
+export function Modal({ open, onClose, title, children, footer, wide }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+  const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -232,20 +283,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
     if (!open && d.open) d.close();
   }, [open]);
   // The phone/browser back gesture closes the modal instead of leaving the page.
-  useEffect(() => {
-    if (!open) return;
-    window.history.pushState({ ...(window.history.state as object), modal: true }, '');
-    let popped = false;
-    const onPop = () => {
-      popped = true;
-      closeRef.current();
-    };
-    window.addEventListener('popstate', onPop);
-    return () => {
-      window.removeEventListener('popstate', onPop);
-      if (!popped && (window.history.state as { modal?: boolean } | null)?.modal) window.history.back();
-    };
-  }, [open]);
+  useBackToClose(open, onClose);
   return (
     <dialog
       ref={ref}

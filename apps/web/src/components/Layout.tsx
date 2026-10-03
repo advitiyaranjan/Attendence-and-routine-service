@@ -51,7 +51,7 @@ import { useApp } from '../lib/store';
 import { syncNow } from '../lib/sync';
 import { AssignmentForm, EventForm, ExamForm, ExtraClassForm, NoteForm, ScheduleForm, StudyLogForm, TaskForm, TopicForm } from './forms';
 import { ErrorBoundary } from './ErrorBoundary';
-import { AppLogo, cn, Modal } from './ui';
+import { AppLogo, cn, isOverlayEntry, Modal } from './ui';
 
 interface NavItem {
   to: string;
@@ -403,7 +403,7 @@ function QuickAdd() {
           <button
             onClick={() => {
               setMenu(false);
-              navigate('/attendance');
+              navigate('/attendance', { replace: isOverlayEntry() });
             }}
             className="flex items-center justify-center gap-2 rounded-2xl border border-line py-3 text-sm font-medium hover:bg-surface-2"
           >

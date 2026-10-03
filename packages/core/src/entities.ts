@@ -286,6 +286,10 @@ export const notificationSettingsSchema = z.object({
   vibration: z.boolean().default(true),
   /** 'chime' additionally plays a short in-app tone while the app is open. */
   soundType: z.enum(['default', 'chime']).default('default'),
+  /** Android app: these categories ring like an alarm until stopped (instead of a single notification sound). */
+  ring: z
+    .array(z.enum(['classes', 'attendance', 'revision', 'tasks', 'assignments', 'exams', 'studySessions', 'reminders']))
+    .default(['tasks', 'revision', 'studySessions', 'reminders']),
   categories: z
     .object({
       classes: category(true, { offsets: [15] }),

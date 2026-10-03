@@ -6,10 +6,16 @@
  * days. They fire with the app closed, the phone offline, or after a reboot,
  * and are re-planned whenever local data changes, a sync brings in changes,
  * or the app comes back to the foreground.
+ *
+ * Categories chosen under "Ring until stopped" (tasks, reminders...) go to our own
+ * TaskAlarm plugin instead: an alarm-clock alarm that loops the alarm sound and shows a
+ * full-screen alarm until the student answers (stop, snooze, complete). Answers given
+ * while the app is closed are queued natively and applied here on the next start.
  */
 import { App } from '@capacitor/app';
+import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/local-notifications';
-import { localMomentNow, planNotifications, type NotificationActionId, type PlannedNotification } from '@student-os/core';
+import { localMomentNow, planNotifications, type NotificationActionId, type NotificationSettings, type PlannedNotification } from '@student-os/core';
 import { db, kvGet, kvSet } from './db';
 import { recordDelivered, toItem, type NotifyItem } from './notify-core';
 import { isNative } from './platform';
@@ -25,7 +31,38 @@ interface ScheduledEntry {
   nid: number;
   at: string;
   item: NotifyItem;
+  /** Rings until stopped (TaskAlarm) rather than a one-off notification. */
+  ring?: boolean;
 }
+
+interface RingAlarm {
+  nid: number;
+  /** Epoch ms. */
+  at: number;
+  item: NotifyItem;
+  /** The quick action offered on the alarm screen next to Stop and Snooze. */
+  action?: { id: NotificationActionId; title: string };
+  vibrate: boolean;
+}
+
+interface AlarmAnswer {
+  action: NotificationActionId | 'stop' | 'snoozed';
+  item: NotifyItem;
+  /** For 'snoozed': when it rings again (epoch ms). */
+  at?: number;
+}
+
+interface TaskAlarmPlugin {
+  schedule(o: { alarms: RingAlarm[] }): Promise<void>;
+  cancelAll(): Promise<void>;
+  ringNow(o: { alarm: RingAlarm }): Promise<void>;
+  takePending(): Promise<{ actions: AlarmAnswer[] }>;
+  status(): Promise<{ fullScreen: boolean }>;
+  openFullScreenSettings(): Promise<void>;
+  addListener(event: 'pending', fn: () => void): Promise<PluginListenerHandle>;
+}
+
+const TaskAlarm = registerPlugin<TaskAlarmPlugin>('TaskAlarm');
 
 /** Stable positive 31-bit id for an Android notification, from our uuid. */
 export function nativeId(id: string): number {
@@ -95,6 +132,17 @@ function toNative(item: NotifyItem, at: Date, channelId: string): LocalNotificat
 
 const plannedAt = (n: Pick<PlannedNotification, 'date' | 'time'>) => new Date(`${n.date}T${n.time}:00`);
 
+/** Whether this item should ring until stopped. */
+function rings(item: NotifyItem, n: NotificationSettings): boolean {
+  return n.sound && (n.ring as string[]).includes(item.category);
+}
+
+function toAlarm(e: ScheduledEntry, n: NotificationSettings): RingAlarm {
+  const type = actionTypeFor(e.item);
+  const quick = ACTION_TYPES.find((t) => t.id === type)?.actions.find((a) => a.id !== 'snooze');
+  return { nid: e.nid, at: Date.parse(e.at), item: e.item, action: quick, vibrate: n.vibration };
+}
+
 // ---------------------------------------------------------------------------
 
 export async function nativePermission(): Promise<'granted' | 'denied' | 'prompt'> {
@@ -148,6 +196,7 @@ async function doReschedule(): Promise<number> {
   const data = await loadPlannerData();
   const pending = await LocalNotifications.getPending();
   if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+  await TaskAlarm.cancelAll().catch(() => undefined);
   if (!data.settings.onboarded) {
     await kvSet(SCHEDULED_KEY, []);
     return 0;
@@ -161,12 +210,23 @@ async function doReschedule(): Promise<number> {
   // Snoozes scheduled earlier survive re-planning.
   const previous = ((await kvGet<ScheduledEntry[]>(SCHEDULED_KEY)) ?? []).filter((e) => e.item.key.includes(':snooze:') && Date.parse(e.at) > now.getTime());
   const channelId = await channelFor();
+  const ns = data.settings.notifications;
   const entries: ScheduledEntry[] = [
     ...toSchedule.map((n) => ({ nid: nativeId(n.id), at: plannedAt(n).toISOString(), item: toItem(n) })),
     ...previous,
-  ];
-  if (entries.length) {
-    await LocalNotifications.schedule({ notifications: entries.map((e) => toNative(e.item, new Date(e.at), channelId)) });
+  ].map((e) => ({ ...e, ring: rings(e.item, ns) }));
+  const plain = entries.filter((e) => !e.ring);
+  const ringing = entries.filter((e) => e.ring);
+  if (plain.length) {
+    await LocalNotifications.schedule({ notifications: plain.map((e) => toNative(e.item, new Date(e.at), channelId)) });
+  }
+  if (ringing.length) {
+    try {
+      await TaskAlarm.schedule({ alarms: ringing.map((e) => toAlarm(e, ns)) });
+    } catch {
+      // App build without the alarm plugin: fall back to normal notifications.
+      await LocalNotifications.schedule({ notifications: ringing.map((e) => toNative(e.item, new Date(e.at), channelId)) });
+    }
   }
   await kvSet(SCHEDULED_KEY, entries);
   return entries.length;
@@ -197,9 +257,78 @@ export async function showNativeNow(item: NotifyItem) {
 export async function snoozeNative(item: NotifyItem, minutes: number) {
   const at = new Date(Date.now() + minutes * 60_000);
   const snoozed: NotifyItem = { ...item, id: `${item.id.slice(0, 24)}-${at.getTime().toString(36)}`, key: `${item.key}:snooze:${at.getTime()}` };
-  await LocalNotifications.schedule({ notifications: [toNative(snoozed, at, await channelFor())] });
+  const ns = (await loadSettings()).notifications;
+  const entry: ScheduledEntry = { nid: nativeId(snoozed.id), at: at.toISOString(), item: snoozed, ring: rings(snoozed, ns) };
+  if (entry.ring) await TaskAlarm.schedule({ alarms: [toAlarm(entry, ns)] });
+  else await LocalNotifications.schedule({ notifications: [toNative(snoozed, at, await channelFor())] });
   const entries = (await kvGet<ScheduledEntry[]>(SCHEDULED_KEY)) ?? [];
-  await kvSet(SCHEDULED_KEY, [...entries, { nid: nativeId(snoozed.id), at: at.toISOString(), item: snoozed }]);
+  await kvSet(SCHEDULED_KEY, [...entries, entry]);
+}
+
+// ---------------------------------------------------------------------------
+// Ringing alarms: answers, test and permissions
+
+let answering: Promise<void> | null = null;
+
+/** Applies what the student answered on the alarm screen (complete, snooze...), also while the app was closed. */
+function applyAlarmAnswers(handlers: NativeHandlers): Promise<void> {
+  answering ??= (async () => {
+    try {
+      const { actions } = await TaskAlarm.takePending();
+      for (const a of actions) {
+        const item = a.item;
+        if (!item?.id) continue;
+        if (a.action === 'snoozed') {
+          // Snoozed on the alarm screen: remember it so re-planning keeps it.
+          const entries = (await kvGet<ScheduledEntry[]>(SCHEDULED_KEY)) ?? [];
+          await kvSet(SCHEDULED_KEY, [...entries, { nid: nativeId(item.id), at: new Date(a.at ?? Date.now()).toISOString(), item, ring: true }]);
+          continue;
+        }
+        if (!(await db.notifications.get(item.id))) await recordDelivered(item, 'local');
+        await db.notifications.update(item.id, { readAt: new Date().toISOString() });
+        if (a.action === 'stop') continue;
+        const href = await handlers.onAction(a.action, { ...item, ...(item.data ?? {}) });
+        if (a.action === 'open' && href) window.dispatchEvent(new CustomEvent('sos-navigate', { detail: href }));
+      }
+    } catch {
+      // App build without the alarm plugin.
+    } finally {
+      answering = null;
+    }
+  })();
+  return answering;
+}
+
+/** Rings right away so the student can hear (and stop) it. */
+export async function testRing() {
+  const ns = (await loadSettings()).notifications;
+  const now = Date.now();
+  const item: NotifyItem = {
+    id: `test-ring-${now.toString(36)}`,
+    key: `test:ring:${now}`,
+    type: 'reminder',
+    category: 'reminders',
+    title: '⏰ Test alarm',
+    body: 'Rings until you press Stop.',
+    entityType: null,
+    entityId: null,
+    href: '/settings',
+    actions: [],
+  };
+  await TaskAlarm.ringNow({ alarm: { nid: nativeId(item.id), at: now, item, vibrate: ns.vibration } });
+}
+
+/** Android 14+: can the alarm take over the (lock) screen? */
+export async function ringFullScreenAllowed(): Promise<boolean> {
+  try {
+    return (await TaskAlarm.status()).fullScreen;
+  } catch {
+    return true;
+  }
+}
+
+export async function openRingFullScreenSettings() {
+  await TaskAlarm.openFullScreenSettings();
 }
 
 export interface NativeHandlers {
@@ -238,8 +367,14 @@ export async function initNative(handlers: NativeHandlers) {
     }
   });
 
+  await TaskAlarm.addListener('pending', () => void applyAlarmAnswers(handlers)).catch(() => undefined);
+  void applyAlarmAnswers(handlers);
+
   await App.addListener('appStateChange', ({ isActive }) => {
-    if (isActive) handlers.onResume();
+    if (isActive) {
+      handlers.onResume();
+      void applyAlarmAnswers(handlers);
+    }
     void reschedule();
   });
   await App.addListener('backButton', ({ canGoBack }) => {
