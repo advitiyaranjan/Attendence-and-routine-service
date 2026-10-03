@@ -5,7 +5,7 @@ import { Browser } from '@capacitor/browser';
 import { registerPlugin } from '@capacitor/core';
 import { apiBase, isNative, setAuthToken } from './platform';
 import { useSetup } from './setup';
-import { toast, useApp, type User } from './store';
+import { useApp, type User } from './store';
 import { resetSyncCursor, syncNow } from './sync';
 import { disablePush, ensurePushSubscription, flushDeliveryReports, pullReadState } from './notifications';
 
@@ -119,15 +119,14 @@ export async function loginWithGoogle(credential: string, nonce?: string) {
  * Sign out. Local data stays on this device unless `wipe` is set, in which case
  * everything (including unsynced changes) is removed.
  */
+/** Waits for a best-effort step, but never longer than `ms` (sign-out must not hang on the network). */
+const atMost = (p: Promise<unknown>, ms: number) => Promise.race([p.catch(() => undefined), new Promise((r) => setTimeout(r, ms))]);
+
 export async function logout(wipe: boolean) {
   // Stop push reminders for the signed-out account on this device.
-  await disablePush().catch(() => undefined);
+  await atMost(disablePush(), 4000);
   await kvSet('push.optOut', false);
-  try {
-    await api('/api/auth/logout', { body: {} });
-  } catch {
-    // still sign out locally
-  }
+  await atMost(api('/api/auth/logout', { body: {} }), 4000);
   setAuthToken(null);
   useSetup.getState().reset();
   await kvSet(USER_KEY, null);
@@ -137,6 +136,9 @@ export async function logout(wipe: boolean) {
     location.reload();
     return;
   }
+  // Back to the sign-in screen, even if "Use on this device only" was chosen before.
+  await kvSet(LOCAL_MODE_KEY, false);
+  useApp.setState({ localMode: false });
   useApp.getState().setUser(null);
   useApp.getState().setSync({ phase: 'local' });
 }
@@ -156,64 +158,37 @@ async function sha256Hex(text: string) {
 const GoogleSignIn = registerPlugin<{ signIn(o: { serverClientId: string; nonce: string }): Promise<{ idToken: string }> }>('GoogleSignIn');
 
 /**
- * Google's account picker inside the app; falls back to a Chrome tab when the phone
- * can't show it (no Google Play services, older app build...).
+ * Google's account picker inside the app. If it fails, the exact error stays on the sign-in
+ * screen with a "Use browser" button (Chrome tab sign-in), instead of failing silently.
  */
 export async function startNativeGoogleSignIn() {
+  useApp.setState({ googleNotice: null });
+  const { googleClientId, googleAndroidClientId } = useApp.getState();
+  if (!googleClientId) return openGoogleInBrowser();
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const { googleClientId, googleAndroidClientId } = useApp.getState();
-  if (googleClientId && !nativeGoogleBroken()) {
+  const hashed = await sha256Hex(nonce);
+  const errors: string[] = [];
+  // The web client id is what Google documents; the Android client id is a second try.
+  for (const [label, serverClientId] of [['web client', googleClientId], ['Android client', googleAndroidClientId]] as const) {
+    if (!serverClientId) continue;
+    let idToken: string;
     try {
-      let idToken: string;
-      try {
-        ({ idToken } = await GoogleSignIn.signIn({ serverClientId: googleClientId, nonce: await sha256Hex(nonce) }));
-      } catch (first) {
-        // Second try with the Android OAuth client id (the server accepts tokens for either).
-        if (!googleAndroidClientId) throw first;
-        console.warn('In-app Google sign-in with the web client id failed', first);
-        ({ idToken } = await GoogleSignIn.signIn({ serverClientId: googleAndroidClientId, nonce: await sha256Hex(nonce) }));
-      }
-      await loginWithGoogle(idToken, nonce);
-      return;
+      ({ idToken } = await GoogleSignIn.signIn({ serverClientId, nonce: hashed }));
     } catch (err) {
-      // Server said no (e.g. network): show that rather than opening a tab.
-      if (err instanceof ApiError) throw err;
-      const detail = (err as Error).message ?? '';
-      console.warn('In-app Google sign-in failed', err);
-      // A real "back" tap on the picker: stop. Anything else (including the "cancelled"
-      // Android reports when the app isn't matched to its Google client) → browser sign-in.
-      if (/user canceled|user cancelled|TYPE_USER_CANCELED/i.test(detail) && !/\[\d+\]/.test(detail)) {
-        toast("Google sign-in didn't finish.", 'error', { label: 'Use browser', run: () => void openGoogleInBrowser() });
-        return;
-      }
-      markNativeGoogleBroken(detail);
-      toast(`Signing in through the browser (in-app: ${detail || 'failed'})`, 'success');
+      console.warn(`In-app Google sign-in (${label}) failed`, err);
+      errors.push(`${label}: ${(err as Error).message || 'failed'}`);
+      continue;
     }
+    // Server problems (e.g. network) are shown as they are.
+    await loginWithGoogle(idToken, nonce);
+    return;
   }
-  await openGoogleInBrowser();
-}
-
-const NATIVE_FAIL_KEY = 'sos-google-native-failed-v2';
-/** After the in-app picker fails, go straight to the browser for a day (then try the picker again). */
-function nativeGoogleBroken(): boolean {
-  try {
-    const at = Number(JSON.parse(localStorage.getItem(NATIVE_FAIL_KEY) ?? 'null')?.at ?? 0);
-    return Date.now() - at < 24 * 3600_000;
-  } catch {
-    return false;
-  }
-}
-function markNativeGoogleBroken(detail: string) {
-  try {
-    localStorage.setItem(NATIVE_FAIL_KEY, JSON.stringify({ at: Date.now(), detail }));
-  } catch {
-    // storage unavailable
-  }
+  useApp.setState({ googleNotice: `In-app Google sign-in didn't work. ${errors.join(' | ')}` });
 }
 
 /** Fallback: Google sign-in in a Chrome tab, which returns to the app by its link. */
-async function openGoogleInBrowser() {
+export async function openGoogleInBrowser() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   const nonce = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   try {
@@ -243,7 +218,7 @@ async function finishNativeGoogle(url: string) {
   try {
     await loginWithGoogle(credential, nonce);
   } catch (err) {
-    toast(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.', 'error');
+    useApp.setState({ googleNotice: err instanceof Error ? err.message : 'Google sign-in failed. Please try again.' });
   }
 }
 

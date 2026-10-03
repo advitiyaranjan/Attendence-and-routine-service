@@ -328,7 +328,8 @@ export async function enablePush() {
 
 export async function disablePush() {
   await kvSet('push.optOut', true);
-  const reg = await navigator.serviceWorker?.ready;
+  // `serviceWorker.ready` never settles without a registered worker (e.g. the Android app).
+  const reg = await navigator.serviceWorker?.getRegistration();
   const sub = await reg?.pushManager.getSubscription();
   if (sub) {
     await api('/api/push/unsubscribe', { body: { endpoint: sub.endpoint } }).catch(() => undefined);

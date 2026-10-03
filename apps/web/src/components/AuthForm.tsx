@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Eye, EyeOff, MailCheck } from 'lucide-react';
 import { errorMessage } from '../lib/api';
-import { APP_LINK_GOOGLE, forgotPassword, login, loginWithGoogle, register, resendCode, resetPassword, startNativeGoogleSignIn, verifyCode, type OtpChallenge } from '../lib/auth';
+import { APP_LINK_GOOGLE, forgotPassword, login, loginWithGoogle, register, resendCode, resetPassword, openGoogleInBrowser, startNativeGoogleSignIn, verifyCode, type OtpChallenge } from '../lib/auth';
 import { isNative } from '../lib/platform';
 import { toast, useApp } from '../lib/store';
 import { Button, Field, Input } from './ui';
@@ -92,6 +92,25 @@ function NativeGoogleButton() {
       </svg>
       {busy ? 'Opening Google…' : 'Continue with Google'}
     </button>
+  );
+}
+
+/** Google sign-in problem in the app, kept on screen (with the exact error) until dismissed. */
+function GoogleNotice() {
+  const notice = useApp((s) => s.googleNotice);
+  if (!notice) return null;
+  return (
+    <div role="alert" className="rounded-xl border border-line bg-surface-2 p-3 text-xs text-ink-2">
+      <p className="select-text break-words">{notice}</p>
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" variant="secondary" onClick={() => void openGoogleInBrowser()}>
+          Use browser
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => useApp.setState({ googleNotice: null })}>
+          Dismiss
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -301,6 +320,7 @@ export function AuthForm({ onSuccess, mode: controlled, onModeChange }: { onSucc
       {googleClientId && !forgot && (
         <>
           {isNative ? <NativeGoogleButton /> : <GoogleButton clientId={googleClientId} onSuccess={onSuccess} />}
+          {isNative && <GoogleNotice />}
           <div className="flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-muted">
             <div className="h-px flex-1 bg-line" /> or <div className="h-px flex-1 bg-line" />
           </div>
