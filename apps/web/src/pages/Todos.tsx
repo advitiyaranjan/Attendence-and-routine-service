@@ -14,6 +14,7 @@ import { ClassRow } from '../components/ClassRow';
 import { complete, completeTarget, FeedbackButton, type FeedbackTarget } from '../components/ItemFeedback';
 import { Card, Checkbox, Chip, cn, EmptyState, Modal, PageHeader, SubjectDot, Tabs } from '../components/ui';
 import { completeRevision } from '../lib/actions';
+import { normTitle } from '../lib/plan';
 import { useAll, useOccurrences, useSubjectMap, useToday } from '../lib/hooks';
 import { create, update } from '../lib/repo';
 import { toast } from '../lib/store';
@@ -53,12 +54,6 @@ const SESSION_LOOKBACK = 14;
  * preferring the scheduled one; feedback on the row applies to the copies too.
  */
 const KIND_RANK = { session: 0, revision: 1, assignment: 2, exam: 3, task: 4 } as const;
-const normTitle = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/^(revise|revision|catch up)\b:?\s*/, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
 
 function dedupe(items: Item[]): Item[] {
   const groups = new Map<string, Item[]>();

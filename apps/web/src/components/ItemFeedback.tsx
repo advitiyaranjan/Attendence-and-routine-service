@@ -2,7 +2,7 @@
  * "How did it go?" for anything on the plan (not just classes): completed, not completed,
  * reschedule or cancel. Every answer can be undone from the toast.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Ban, CalendarClock, Check, MessageSquareMore, X } from 'lucide-react';
 import { addDays, minutesToTime, timeToMinutes, todayISO, type Assignment, type CalendarEvent, type Exam, type ISODate, type RecallRating, type RevisionSchedule, type Task } from '@student-os/core';
 import { completeRevision } from '../lib/actions';
@@ -156,6 +156,14 @@ export function completeTarget(t: FeedbackTarget, also: FeedbackTarget[] = []): 
   return apply(complete, [t, ...also], `${t.kind === 'assignment' ? 'Submitted' : 'Completed'}: ${targetTitle(t)}`);
 }
 
+export function notDoneTarget(t: FeedbackTarget, also: FeedbackTarget[] = []): Promise<void> {
+  return apply(notDone, [t, ...also], t.kind === 'assignment' ? `${targetTitle(t)}: still open` : `Not done: ${targetTitle(t)} moved to tomorrow`);
+}
+
+export function cancelTarget(t: FeedbackTarget, also: FeedbackTarget[] = []): Promise<void> {
+  return apply(cancel, [t, ...also], `Cancelled: ${targetTitle(t)}`);
+}
+
 /** Small button that opens the feedback sheet. */
 export function FeedbackButton({ target, also, className, label = 'Feedback' }: { target: FeedbackTarget; also?: FeedbackTarget[]; className?: string; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -178,10 +186,21 @@ export function FeedbackButton({ target, also, className, label = 'Feedback' }: 
   );
 }
 
-export function FeedbackSheet({ target, also = [], onClose }: { target: FeedbackTarget | null; also?: FeedbackTarget[]; onClose: () => void }) {
+/** `start="reschedule"` opens straight on the date/time picker. */
+export function FeedbackSheet({ target, also = [], onClose, start = 'menu' }: { target: FeedbackTarget | null; also?: FeedbackTarget[]; onClose: () => void; start?: 'menu' | 'reschedule' }) {
   const [step, setStep] = useState<Step>('menu');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  useEffect(() => {
+    if (!target || start !== 'reschedule') return;
+    const w = when(target);
+    const today = todayISO();
+    setDate(w.date && w.date > today ? w.date : addDays(today, 1));
+    setTime(w.time ?? '');
+    setStep('reschedule');
+    // Only when the sheet opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!target, start]);
   const close = () => {
     setStep('menu');
     onClose();
@@ -223,11 +242,11 @@ export function FeedbackSheet({ target, also = [], onClose }: { target: Feedback
               icon={<X className="size-5" style={{ color: 'var(--color-critical)' }} />}
               label="Not completed"
               hint={target.kind === 'assignment' ? 'Keep it open' : 'Moves to tomorrow'}
-              onClick={run(() => apply(notDone, all, target.kind === 'assignment' ? `${title}: still open` : `Not done: ${title} moved to tomorrow`))}
+              onClick={run(() => notDoneTarget(target, also))}
             />
           )}
           <Option icon={<CalendarClock className="size-5 text-accent" />} label="Reschedule" hint="Pick a new time" onClick={openReschedule} />
-          <Option icon={<Ban className="size-5 text-muted" />} label="Cancel it" hint={target.kind === 'revision' ? 'Skip this revision' : 'Remove from plan'} onClick={run(() => apply(cancel, all, `Cancelled: ${title}`))} />
+          <Option icon={<Ban className="size-5 text-muted" />} label="Cancel it" hint={target.kind === 'revision' ? 'Skip this revision' : 'Remove from plan'} onClick={run(() => cancelTarget(target, also))} />
         </div>
       )}
 
@@ -244,8 +263,8 @@ export function FeedbackSheet({ target, also = [], onClose }: { target: Feedback
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setStep('menu')}>
-              Back
+            <Button variant="ghost" onClick={() => (start === 'reschedule' ? close() : setStep('menu'))}>
+              {start === 'reschedule' ? 'Cancel' : 'Back'}
             </Button>
             <Button
               variant="primary"

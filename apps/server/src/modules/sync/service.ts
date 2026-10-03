@@ -120,6 +120,11 @@ export class SyncService {
       });
     } catch (err) {
       if (err instanceof HttpError) return { operationId: op.operationId, status: 'rejected', error: err.message };
+      // The same change arrived twice at once (two syncs racing): the other one applied it.
+      if ((err as { code?: string }).code === 'P2002') {
+        const applied = await this.prisma.syncOperation.findUnique({ where: { operationId: op.operationId } });
+        if (applied?.userId === userId) return applied.result as unknown as SyncOperationResult;
+      }
       console.error('sync operation failed', op.entity, op.entityId, err);
       return { operationId: op.operationId, status: 'rejected', error: 'Could not save this change' };
     }

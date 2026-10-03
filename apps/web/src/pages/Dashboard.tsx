@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Flame, ListChecks, Repeat, Sparkles, Target, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bot, CalendarClock, CalendarDays, Check, Flame, ListChecks, MoreHorizontal, Repeat, Sparkles, Target, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
 import {
   addDays,
   HOME_SECTIONS,
@@ -12,17 +12,20 @@ import {
   nowMinutes,
   rankTasks,
   timeToMinutes,
+  type CalendarEvent,
   type RecallRating,
   type RevisionSchedule,
+  type Subject,
 } from '@student-os/core';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AskAI } from '../components/AskAI';
 import { ClassRow } from '../components/ClassRow';
+import { completeTarget, FeedbackSheet, notDoneTarget, type FeedbackTarget } from '../components/ItemFeedback';
 import { UpNext, upNextItems } from '../components/UpNext';
 import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
-import { update } from '../lib/repo';
+import { copiesOf, normTitle, scheduledKeys, taskDay } from '../lib/plan';
 import { toast, useApp } from '../lib/store';
 import { RatingButtons } from './Revision';
 
@@ -53,11 +56,29 @@ export function Dashboard() {
   const activeClasses = classes.filter((c) => c.status !== 'cancelled' && c.status !== 'rescheduled');
   const minutesNow = nowMinutes(now);
 
-  const openTasks = tasks.filter((t) => t.status !== 'done' && ((t.plannedDate && t.plannedDate <= today) || (t.dueDate && t.dueDate <= today)));
-  const priorities = rankTasks(tasks, today).slice(0, 3);
   const dueRevisions = revisions.filter((r) => r.status === 'pending' && r.dueDate <= today).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const overdueRevisions = dueRevisions.filter((r) => r.dueDate < today).length;
   const topicTitle = (id: string) => topics.find((t) => t.id === id)?.title ?? 'Topic';
+  // Today's priorities: only what is due today, overdue or undated, and not already in the
+  // schedule as a session (that copy is answered there).
+  const scheduled = scheduledKeys(events, today);
+  // Tasks due or planned up to today, counted once (a session's task copy is in the schedule).
+  const openTasks = tasks.filter((t) => t.status !== 'done' && !!taskDay(t) && taskDay(t)! <= today && !scheduled.has(normTitle(t.title)));
+  const priorities = rankTasks(
+    tasks.filter((t) => {
+      const day = taskDay(t);
+      return (!day || day <= today) && !scheduled.has(normTitle(t.title));
+    }),
+    today,
+  ).slice(0, 3);
+  const priorityRevisions = dueRevisions.filter((r) => !scheduled.has(normTitle(topicTitle(r.topicId))));
+  const planData = { tasks, revisions, topicTitle };
+  /** Copies of an item that should be answered together with it. */
+  const alsoFor = (t: FeedbackTarget): FeedbackTarget[] => {
+    if (t.kind === 'event') return copiesOf(t.event.title, t.event.date, planData, today);
+    if (t.kind === 'task') return copiesOf(t.task.title, taskDay(t.task) ?? today, planData, today).filter((x) => !(x.kind === 'task' && x.task.id === t.task.id));
+    return [];
+  };
 
   const studyToday =
     sessions.filter((s) => s.date === today).reduce((a, s) => a + s.durationMinutes, 0) +
@@ -122,6 +143,7 @@ export function Dashboard() {
               subjects={subjects}
               attendanceFor={(id) => attendance?.subjects.find((s) => s.subject.id === id)?.summary}
               today={today}
+              alsoFor={alsoFor}
             />
           </Slot>
 
@@ -182,7 +204,7 @@ export function Dashboard() {
           <Slot k="priorities">
           <Card>
             <SectionTitle action={<Link to="/todos" className="text-xs font-medium text-accent">Open Todos</Link>}>Today's priorities</SectionTitle>
-            {priorities.length === 0 && dueRevisions.length === 0 ? (
+            {priorities.length === 0 && priorityRevisions.length === 0 ? (
               <p className="text-sm text-ink-2">Nothing pending. Add a task with the + button, or ask AI to plan your day.</p>
             ) : (
               <ul className="divide-y divide-line">
@@ -191,10 +213,7 @@ export function Dashboard() {
                     <Checkbox
                       checked={false}
                       label={`Complete ${t.title}`}
-                      onChange={() => {
-                        void update('task', t.id, { status: 'done', completedAt: new Date().toISOString() });
-                        toast(`Completed: ${t.title}`, 'success', { label: 'Undo', run: () => void update('task', t.id, { status: 'todo', completedAt: null }) });
-                      }}
+                      onChange={() => void completeTarget({ kind: 'task', task: t }, alsoFor({ kind: 'task', task: t }))}
                     />
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{t.title}</div>
@@ -202,7 +221,7 @@ export function Dashboard() {
                     </div>
                   </li>
                 ))}
-                {dueRevisions.slice(0, Math.max(0, 5 - priorities.length)).map((r) => (
+                {priorityRevisions.slice(0, Math.max(0, 5 - priorities.length)).map((r) => (
                   <li key={r.id} className="flex items-start gap-3 py-2.5">
                     <Checkbox checked={false} label={`Revise ${topicTitle(r.topicId)}`} onChange={() => setRating(r)} />
                     <div className="min-w-0">
@@ -230,17 +249,17 @@ export function Dashboard() {
               </p>
             ) : (
               <div className="divide-y divide-line">
-                {classes.map((c) => (
-                  <ClassRow key={c.id} occ={c} subject={subjects.get(c.subjectId)} />
-                ))}
-                {todaysEvents.map((e) => (
-                  <div key={e.id} className={cn('flex items-center gap-3 py-2.5 text-sm', e.completedAt && 'opacity-60')}>
-                    <span className="w-16 shrink-0 text-xs font-medium text-ink-2 tabular">{e.startTime ? formatTime12(e.startTime) : 'All day'}</span>
-                    {e.subjectId ? <SubjectDot color={subjects.get(e.subjectId)?.color ?? 'var(--muted)'} /> : <CalendarClock className="size-3.5 shrink-0 text-muted" />}
-                    <span className={cn('min-w-0 flex-1 truncate', e.completedAt && 'line-through')}>{e.title}</span>
-                    <span className="shrink-0 text-xs capitalize text-muted">{e.type}</span>
-                  </div>
-                ))}
+                {/* One timeline: classes and sessions by start time (all-day items last). */}
+                {[
+                  ...classes.map((c) => ({ start: c.startTime, key: `c${c.id}`, node: <ClassRow key={`c${c.id}`} occ={c} subject={subjects.get(c.subjectId)} /> })),
+                  ...todaysEvents.map((e) => ({
+                    start: e.startTime ?? '99:99',
+                    key: `e${e.id}`,
+                    node: <EventRow key={`e${e.id}`} e={e} subjects={subjects} minutesNow={minutesNow} also={alsoFor({ kind: 'event', event: e })} />,
+                  })),
+                ]
+                  .sort((a, b) => a.start.localeCompare(b.start) || a.key.localeCompare(b.key))
+                  .map((r) => r.node)}
               </div>
             )}
           </Card>
@@ -382,6 +401,52 @@ export function Dashboard() {
       </Modal>
     </div>
     </HomeLayout.Provider>
+  );
+}
+
+/**
+ * A session/event in today's schedule, laid out like a class row: once it has started,
+ * ✓ (completed) and ✕ (not completed, moves to tomorrow); ⋯ for reschedule / cancel.
+ */
+function EventRow({ e, subjects, minutesNow, also }: { e: CalendarEvent; subjects: Map<string, Subject>; minutesNow: number; also: FeedbackTarget[] }) {
+  const [sheet, setSheet] = useState(false);
+  const target: FeedbackTarget = { kind: 'event', event: e };
+  const started = !e.startTime || timeToMinutes(e.startTime) <= minutesNow;
+  const done = !!e.completedAt;
+  return (
+    <div className={cn('flex items-center gap-3 py-2', done && 'opacity-60')}>
+      <div className="w-16 shrink-0 text-xs text-ink-2 tabular">
+        <div>{e.startTime ? formatTime12(e.startTime) : 'All day'}</div>
+        {e.endTime && <div className="text-muted">{formatTime12(e.endTime)}</div>}
+      </div>
+      {e.subjectId ? <SubjectDot color={subjects.get(e.subjectId)?.color ?? 'var(--muted)'} /> : <CalendarClock className="size-3.5 shrink-0 text-muted" />}
+      <div className="min-w-0 flex-1">
+        <div className={cn('truncate text-sm font-medium', done && 'line-through')}>{e.title}</div>
+        <div className="text-xs capitalize text-muted">{e.type === 'study' ? (e.title.startsWith('Catch up') ? 'Catch-up session' : 'Study session') : e.type}</div>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {done ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-ink-2">
+            <Check className="size-3" style={{ color: 'var(--color-good)' }} /> Done
+          </span>
+        ) : (
+          started && (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => void completeTarget(target, also)} aria-label={`Completed ${e.title}`} icon={<Check className="size-4" style={{ color: 'var(--color-good)' }} />}>
+                <span className="hidden sm:inline">Done</span>
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => void notDoneTarget(target, also)} aria-label={`Not completed ${e.title}`} icon={<X className="size-4" style={{ color: 'var(--color-critical)' }} />}>
+                <span className="hidden sm:inline">Missed</span>
+              </Button>
+            </>
+          )
+        )}
+        <Button size="sm" variant="ghost" onClick={() => setSheet(true)} aria-label={`More options for ${e.title}`}>
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </div>
+      <FeedbackSheet target={sheet ? target : null} also={also} onClose={() => setSheet(false)} />
+    </div>
   );
 }
 

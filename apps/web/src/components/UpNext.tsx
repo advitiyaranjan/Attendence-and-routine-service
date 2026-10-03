@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { AlarmClock, AlertTriangle, CalendarClock, Check, ChevronLeft, ChevronRight, Clock, ListChecks, MapPin, MessageSquareMore } from 'lucide-react';
+import { AlarmClock, AlertTriangle, Ban, CalendarClock, Check, ChevronLeft, ChevronRight, Clock, ListChecks, MapPin, X } from 'lucide-react';
 import {
   fmtPct,
   formatMinutes,
@@ -16,7 +16,7 @@ import {
   type Task,
 } from '@student-os/core';
 import { update } from '../lib/repo';
-import { completeTarget, FeedbackSheet, type FeedbackTarget } from './ItemFeedback';
+import { cancelTarget, completeTarget, FeedbackSheet, notDoneTarget, type FeedbackTarget } from './ItemFeedback';
 import { cn } from './ui';
 
 type Item =
@@ -71,6 +71,7 @@ export function UpNext({
   subjects,
   attendanceFor,
   today,
+  alsoFor = () => [],
 }: {
   items: Item[];
   minutesNow: number;
@@ -78,6 +79,8 @@ export function UpNext({
   subjects: Map<string, Subject>;
   attendanceFor: (subjectId: string) => SubjectAttendanceSummary | undefined;
   today: ISODate;
+  /** Duplicate copies (task / revision) of an item, answered together with it. */
+  alsoFor?: (target: FeedbackTarget) => FeedbackTarget[];
 }) {
   // Position is kept relative to "now", so the card follows the clock unless you swipe.
   const [offset, setOffset] = useState(0);
@@ -144,7 +147,7 @@ export function UpNext({
         style={drag ? { transform: `translateX(${drag}px)`, opacity: Math.max(0.3, 1 - Math.abs(drag) / 300) } : undefined}
       >
         {item ? (
-          <Slide item={item} minutesNow={minutesNow} subjects={subjects} attendanceFor={attendanceFor} today={today} />
+          <Slide item={item} minutesNow={minutesNow} subjects={subjects} attendanceFor={attendanceFor} today={today} alsoFor={alsoFor} />
         ) : (
           <>
             <Label>{items.length ? 'Up next' : 'Next class'}</Label>
@@ -179,7 +182,21 @@ function Meta({ children }: { children: ReactNode }) {
   return <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-90">{children}</div>;
 }
 
-function Slide({ item, minutesNow, subjects, attendanceFor, today }: { item: Item; minutesNow: number; subjects: Map<string, Subject>; attendanceFor: (subjectId: string) => SubjectAttendanceSummary | undefined; today: ISODate }) {
+function Slide({
+  item,
+  minutesNow,
+  subjects,
+  attendanceFor,
+  today,
+  alsoFor,
+}: {
+  item: Item;
+  minutesNow: number;
+  subjects: Map<string, Subject>;
+  attendanceFor: (subjectId: string) => SubjectAttendanceSummary | undefined;
+  today: ISODate;
+  alsoFor: (target: FeedbackTarget) => FeedbackTarget[];
+}) {
   const past = item.end < minutesNow || (item.end === minutesNow && item.kind !== 'class');
   const now = !past && item.start <= minutesNow;
   const until = !past && !now && <span>in {formatMinutes(item.start - minutesNow)}</span>;
@@ -227,7 +244,7 @@ function Slide({ item, minutesNow, subjects, attendanceFor, today }: { item: Ite
           {task.estimatedMinutes ? <span>~{formatMinutes(task.estimatedMinutes)}</span> : null}
           {until}
         </Meta>
-        <Actions target={{ kind: 'task', task }} />
+        <Actions target={{ kind: 'task', task }} alsoFor={alsoFor} />
       </>
     );
   }
@@ -246,7 +263,7 @@ function Slide({ item, minutesNow, subjects, attendanceFor, today }: { item: Ite
           {event.subjectId && subjects.get(event.subjectId) && <span>{subjects.get(event.subjectId)!.name}</span>}
           {until}
         </Meta>
-        <Actions target={{ kind: 'event', event }} />
+        <Actions target={{ kind: 'event', event }} alsoFor={alsoFor} />
       </>
     );
   }
@@ -275,16 +292,33 @@ function DoneButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** "Mark done" plus the full feedback (not done, reschedule, cancel). */
-function Actions({ target }: { target: FeedbackTarget }) {
-  const [open, setOpen] = useState(false);
+/** The four answers, right on the card. */
+function Actions({ target, alsoFor }: { target: FeedbackTarget; alsoFor: (target: FeedbackTarget) => FeedbackTarget[] }) {
+  const [reschedule, setReschedule] = useState(false);
+  const also = alsoFor(target);
   return (
-    <div className="flex flex-wrap gap-2">
-      <DoneButton onClick={() => void completeTarget(target)} />
-      <button onClick={() => setOpen(true)} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium hover:bg-white/25">
-        <MessageSquareMore className="size-4" /> Didn't happen?
-      </button>
-      <FeedbackSheet target={open ? target : null} onClose={() => setOpen(false)} />
+    <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+      <Pill icon={<Check className="size-4" />} onClick={() => void completeTarget(target, also)}>
+        Completed
+      </Pill>
+      <Pill icon={<X className="size-4" />} onClick={() => void notDoneTarget(target, also)}>
+        Not completed
+      </Pill>
+      <Pill icon={<CalendarClock className="size-4" />} onClick={() => setReschedule(true)}>
+        Reschedule
+      </Pill>
+      <Pill icon={<Ban className="size-4" />} onClick={() => void cancelTarget(target, also)}>
+        Cancel
+      </Pill>
+      <FeedbackSheet target={reschedule ? target : null} also={also} start="reschedule" onClose={() => setReschedule(false)} />
     </div>
+  );
+}
+
+function Pill({ icon, onClick, children }: { icon: ReactNode; onClick: () => void; children: string }) {
+  return (
+    <button onClick={onClick} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25">
+      {icon} {children}
+    </button>
   );
 }
