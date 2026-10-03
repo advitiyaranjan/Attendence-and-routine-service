@@ -95,6 +95,8 @@ function apply(msg: CopilotMessage, prepared: Prepared, autoQuiz: boolean) {
   }
 }
 
+let loading: Promise<void> | null = null;
+
 export const useCopilot = createStore<CopilotState>((set, get) => {
   const persist = () => void kvSet(HISTORY_KEY, get().messages.slice(-60));
   const patchProposal = (messageId: string, proposalId: string, fn: (p: Proposal) => Proposal) => {
@@ -116,10 +118,15 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
     pendingPrompt: null,
     loaded: false,
 
-    async load() {
-      if (get().loaded) return;
-      const history = (await kvGet<CopilotMessage[]>(HISTORY_KEY)) ?? [];
-      set({ messages: history, loaded: true });
+    load() {
+      // One shared load: opening the panel and sending (e.g. "Ask AI" on Home) both call this
+      // at once, and a second, later load used to replace the just-sent message with old history.
+      loading ??= (async () => {
+        const history = (await kvGet<CopilotMessage[]>(HISTORY_KEY)) ?? [];
+        // Keep anything added while history was loading.
+        set({ messages: [...history, ...get().messages.filter((m) => !history.some((h) => h.id === m.id))], loaded: true });
+      })();
+      return loading;
     },
 
     setOpen(open, prompt = null) {

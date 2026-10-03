@@ -80,6 +80,8 @@ export default function Todos() {
   const today = useToday();
   const subjects = useSubjectMap();
   const classes = useOccurrences(today, today) ?? [];
+  // Lectures for the Upcoming tab (next two weeks).
+  const classesAhead = useOccurrences(addDays(today, 1), addDays(today, 14)) ?? [];
   const tasks = useAll('task') ?? [];
   const revisions = useAll('revisionSchedule') ?? [];
   const topics = useAll('topic') ?? [];
@@ -230,6 +232,33 @@ export default function Todos() {
       </Card>
     );
 
+  // Upcoming: one card per day with that day's lectures first, then everything else.
+  const lecturesShown = filter === 'all' || filter === 'study';
+  const lecturesOn = (d: string) => (lecturesShown ? classesAhead.filter((c) => c.date === d && c.status !== 'rescheduled') : []);
+  const upcomingDays = [...new Set([...upcoming.map((i) => i.date!), ...(lecturesShown ? classesAhead.filter((c) => c.status !== 'rescheduled').map((c) => c.date) : [])])].sort();
+  const dayCard = (d: string) => {
+    const lectures = lecturesOn(d);
+    const list = upcoming.filter((i) => i.date === d);
+    return (
+      <Card key={d} className="py-3 sm:py-4">
+        <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          <CalendarClock className="size-3.5" /> {dayLabel(d, today)}
+          <span className="ml-auto font-medium normal-case tracking-normal">
+            {[lectures.length && `${lectures.length} class${lectures.length === 1 ? '' : 'es'}`, list.length && `${list.length} open`].filter(Boolean).join(' · ')}
+          </span>
+        </h2>
+        {lectures.length > 0 && (
+          <div className="divide-y divide-line">
+            {lectures.map((c) => (
+              <ClassRow key={c.id} occ={c} subject={subjects.get(c.subjectId)} compact />
+            ))}
+          </div>
+        )}
+        {list.length > 0 && <ul className={cn('divide-y divide-line', lectures.length > 0 && 'border-t border-line')}>{list.map((i) => row(i))}</ul>}
+      </Card>
+    );
+  };
+
   const showClasses = view === 'today' && (filter === 'all' || filter === 'study') && classes.length > 0;
   const groups =
     view === 'today'
@@ -242,7 +271,7 @@ export default function Todos() {
         ]
       : view === 'overdue'
         ? [section('Overdue', <CalendarClock className="size-3.5" />, overdue, true)]
-        : [...new Set(upcoming.map((i) => i.date!))].sort().map((d) => section(dayLabel(d, today), <CalendarClock className="size-3.5" />, upcoming.filter((i) => i.date === d)));
+        : upcomingDays.map((d) => dayCard(d));
   const empty = groups.every((g) => !g) && !showClasses;
   const openToday = todayItems.filter((i) => !i.done && i.kind !== 'exam').length;
 
