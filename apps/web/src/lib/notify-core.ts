@@ -30,6 +30,24 @@ interface Snoozed {
 
 const SNOOZE_KEY = 'notify.snoozed';
 export const DEFAULT_SNOOZE_MINUTES = 10;
+const READ_RETENTION_MS = 24 * 60 * 60_000;
+
+/** Preserve the first read time across page, service worker and native actions. */
+export async function markReadOnDevice(ids: string[], at: Date = new Date()): Promise<AppNotification[]> {
+  return db.transaction('rw', db.notifications, async () => {
+    const unread = await db.notifications.where('id').anyOf(ids).filter((n) => !n.readAt).toArray();
+    await db.notifications.bulkUpdate(unread.map((n) => ({ key: n.id, changes: { readAt: at.toISOString() } })));
+    return unread;
+  });
+}
+
+/** Use the same tombstone as manual deletion, so expired items cannot be planned again. */
+export async function expireReadNotifications(now: Date = new Date()): Promise<number> {
+  const cutoff = now.getTime() - READ_RETENTION_MS;
+  return db.notifications
+    .filter((n) => n.status !== 'dismissed' && n.readAt !== null && Date.parse(n.readAt) <= cutoff)
+    .modify({ status: 'dismissed' });
+}
 
 export function toItem(n: PlannedNotification): NotifyItem {
   return {
@@ -49,6 +67,7 @@ export function toItem(n: PlannedNotification): NotifyItem {
 
 /** Planned notifications that are due now and haven't been shown on this device, plus due snoozes. */
 export async function computeDue(now: Date = new Date()): Promise<{ items: NotifyItem[]; settings: Settings }> {
+  await expireReadNotifications(now);
   const data = await loadPlannerData();
   const moment = localMomentNow(now);
   const due = dueNow(planNotifications(data, moment, 180), moment).filter((n) => n.category !== 'sync');

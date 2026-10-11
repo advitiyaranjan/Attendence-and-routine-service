@@ -15,7 +15,7 @@ import { completeRevision, markAttendance } from './actions';
 import { api } from './api';
 import { db, kvGet, kvSet } from './db';
 import { deviceId } from './device';
-import { computeDue, osOptions, recordDelivered, snoozeLocal, type NotifyItem } from './notify-core';
+import { computeDue, expireReadNotifications, markReadOnDevice, osOptions, recordDelivered, snoozeLocal, type NotifyItem } from './notify-core';
 import { loadSettings } from './queries';
 import { update } from './repo';
 import { toast, useApp } from './store';
@@ -240,11 +240,8 @@ export async function performNotificationAction(action: NotificationActionId, p:
 // Notification center
 
 export async function markRead(ids: string[]) {
-  const now = new Date().toISOString();
-  const rows = await db.notifications.where('id').anyOf(ids).toArray();
-  const unread = rows.filter((r) => !r.readAt);
+  const unread = await markReadOnDevice(ids);
   if (!unread.length) return;
-  await db.notifications.bulkUpdate(unread.map((r) => ({ key: r.id, changes: { readAt: now } })));
   if (useApp.getState().user && navigator.onLine) {
     api('/api/notifications/read', { body: { keys: unread.map((r) => r.key) } }).catch(() => undefined);
   }
@@ -258,8 +255,9 @@ export async function pullReadState() {
     const read = new Map(notifications.filter((r) => r.readAt).map((r) => [r.key, r.readAt!]));
     if (!read.size) return;
     const local = await db.notifications.where('key').anyOf([...read.keys()]).toArray();
-    const changes = local.filter((r) => !r.readAt).map((r) => ({ key: r.id, changes: { readAt: read.get(r.key)! } }));
+    const changes = local.filter((r) => !r.readAt || Date.parse(read.get(r.key)!) < Date.parse(r.readAt)).map((r) => ({ key: r.id, changes: { readAt: read.get(r.key)! } }));
     if (changes.length) await db.notifications.bulkUpdate(changes);
+    await expireReadNotifications();
   } catch {
     // offline or signed out: try again next time
   }
