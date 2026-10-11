@@ -201,10 +201,10 @@ export function riskColor(risk: RiskLevel) {
 export function Meter({ value, color, marker, label }: { value: number | null; color: string; marker?: number; label: string }) {
   const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
   return (
-    <div className="relative h-2 w-full rounded-full bg-surface-2" role="meter" aria-valuenow={value ?? undefined} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+    <div className="relative h-2.5 w-full rounded-full bg-surface-2" role="meter" aria-valuenow={value ?? undefined} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
       {marker !== undefined && (
-        <div className="absolute -top-0.5 h-3 w-0.5 rounded-full bg-ink-2" style={{ left: `calc(${marker}% - 1px)` }} title={`Minimum ${marker}%`} />
+        <div className="absolute -top-0.5 h-3.5 w-0.5 rounded-full bg-ink-2" style={{ left: `calc(${marker}% - 1px)` }} title={`Minimum ${marker}%`} />
       )}
     </div>
   );

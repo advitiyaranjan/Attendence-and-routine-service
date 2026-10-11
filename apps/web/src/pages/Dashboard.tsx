@@ -19,6 +19,7 @@ import {
   type RecallRating,
   type RevisionSchedule,
   type Subject,
+  type SubjectAttendanceSummary,
 } from '@student-os/core';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AskAI } from '../components/AskAI';
@@ -178,6 +179,7 @@ export function Dashboard() {
                 to="/todos"
                 icon={ListChecks}
                 label="Today's tasks"
+                tint="sky"
                 value={`${todayWorkDone}/${todayWork}`}
                 sub={todayWork === 0 ? 'Nothing planned' : todayWork === todayWorkDone ? 'All done 🎉' : `${todayWork - todayWorkDone} left`}
                 progress={todayWork ? (todayWorkDone / todayWork) * 100 : undefined}
@@ -186,6 +188,7 @@ export function Dashboard() {
                 to="/analytics"
                 icon={Target}
                 label="Self study"
+                tint="gold"
                 value={formatMinutes(studyToday)}
                 sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
                 progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
@@ -194,6 +197,7 @@ export function Dashboard() {
                 to="/deadlines"
                 icon={FilePlus2}
                 label="Assignments"
+                tint="lilac"
                 value={`${submitted}/${trackedAssignments.length}`}
                 sub={trackedAssignments.length === 0 ? 'None due' : openDueWeek ? `${openDueWeek} due this week` : 'submitted'}
                 progress={trackedAssignments.length ? (submitted / trackedAssignments.length) * 100 : undefined}
@@ -202,6 +206,7 @@ export function Dashboard() {
                 to="/attendance"
                 icon={ChartPie}
                 label="Today's attendance"
+                tint="mint"
                 value={markedToday ? fmtPct((presentToday / markedToday) * 100) : '—'}
                 sub={
                   startedToday.length === 0
@@ -310,40 +315,7 @@ export function Dashboard() {
 
         <div className="flex min-w-0 flex-col gap-5">
           <Slot k="attendance">
-          <Card>
-            <SectionTitle action={<Link to="/attendance" className="text-xs font-medium text-accent">Details</Link>}>Attendance</SectionTitle>
-            {attendance && attendance.overall.conducted > 0 && (
-              <div className="mb-3 flex items-baseline gap-2">
-                <span className="text-3xl font-semibold tracking-tight tabular">{fmtPct(attendance.overall.percent)}</span>
-                <span className="text-sm text-ink-2">overall</span>
-              </div>
-            )}
-            {subjectAttendance.length === 0 ? (
-              <p className="text-sm text-ink-2">Mark your classes as present or absent and your attendance will show here.</p>
-            ) : (
-              <ul className="space-y-3">
-                {subjectAttendance.map(({ subject, summary, thresholds }) => {
-                  const warn = summary.risk === 'at_risk' || summary.risk === 'below_min';
-                  return (
-                    <li key={subject.id}>
-                      <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <SubjectDot color={subject.color} />
-                          <span className="truncate">{subject.name}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1 font-medium tabular">
-                          {fmtPct(summary.percent)}
-                          {warn && <AlertTriangle className="size-3.5" style={{ color: riskColor(summary.risk) }} aria-label="At risk" />}
-                        </span>
-                      </div>
-                      <Meter value={summary.percent} color={riskColor(summary.risk)} marker={thresholds.min} label={`${subject.name} attendance`} />
-                      {warn && <p className="mt-1 text-xs text-ink-2">{summary.advice}</p>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+            <HomeAttendance overall={attendance?.overall ?? null} subjects={subjectAttendance} minAttendance={settings.minAttendance} />
           </Slot>
 
           <Slot k="revision">
@@ -529,7 +501,8 @@ function Hero({
   return (
     <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 shadow-card sm:p-6">
       <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 size-80 rounded-full bg-accent/12 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-16 size-64 rounded-full bg-accent/6 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full bg-gold/20 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-32 left-1/3 size-64 rounded-full bg-tint-rose blur-3xl" />
       <div className="relative flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{dateLabel}</p>
@@ -601,20 +574,35 @@ function Slot({ k, children }: { k: HomeSection; children: ReactNode }) {
   return <div style={{ order }}>{children}</div>;
 }
 
-function StatCard({ to, icon: Icon, label, value, sub, progress, tone }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tone?: 'good' | 'muted' }) {
+/** Light pastel tints for the home stat cards: background wash, icon bubble and meter colour. */
+const TINT = {
+  sky: { bg: 'var(--tint-sky)', ink: 'var(--sky-ink)' },
+  mint: { bg: 'var(--tint-mint)', ink: 'var(--mint-ink)' },
+  gold: { bg: 'var(--tint-gold)', ink: 'var(--gold-ink)' },
+  rose: { bg: 'var(--tint-rose)', ink: 'var(--rose-ink)' },
+  lilac: { bg: 'var(--tint-lilac)', ink: 'var(--lilac-ink)' },
+} as const;
+type Tint = keyof typeof TINT;
+
+function StatCard({ to, icon: Icon, label, value, sub, progress, tint = 'sky' }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tint?: Tint }) {
+  const t = TINT[tint];
   return (
-    <Link to={to} className="min-w-0 rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-[box-shadow,transform] hover:-translate-y-px hover:shadow-lift sm:p-4">
+    <Link
+      to={to}
+      className="min-w-0 rounded-2xl border border-line p-3.5 shadow-card transition-[box-shadow,transform] hover:-translate-y-px hover:shadow-lift sm:p-4"
+      style={{ background: `linear-gradient(160deg, ${t.bg} 0%, var(--surface) 75%)` }}
+    >
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-2">
         <span className="truncate">{label}</span>
-        <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', tone === 'good' ? 'bg-good/15 text-good-ink' : tone === 'muted' ? 'bg-surface-2 text-muted' : 'bg-accent-soft text-accent')}>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-xl" style={{ background: t.bg, color: t.ink }}>
           <Icon className="size-4" />
         </span>
       </div>
-      <div className="mt-1 truncate text-2xl font-semibold tracking-tight tabular">{value}</div>
+      <div className="mt-1.5 truncate text-2xl font-semibold tracking-tight tabular">{value}</div>
       <div className="truncate text-xs text-muted">{sub}</div>
       {progress !== undefined && (
-        <div className="mt-2">
-          <Meter value={progress} color="var(--accent)" label={`${label} progress`} />
+        <div className="mt-2.5">
+          <Meter value={progress} color={t.ink} label={`${label} progress`} />
         </div>
       )}
     </Link>
@@ -635,4 +623,95 @@ export function countdown(days: number) {
   if (days === 0) return 'Today';
   if (days === 1) return 'Tomorrow';
   return `${days} days`;
+}
+
+type SubjectRow = { subject: Subject; summary: SubjectAttendanceSummary; thresholds: { min: number } };
+
+/**
+ * Home attendance: one big overall ring with a status summary, then every subject as its own
+ * roomy tile (colour dot, attended/conducted, a thick meter with the minimum marked). Subjects
+ * that need attention come first and say what to do.
+ */
+function HomeAttendance({ overall, subjects, minAttendance }: { overall: { present: number; conducted: number; percent: number | null } | null; subjects: SubjectRow[]; minAttendance: number }) {
+  const rank = { below_min: 0, at_risk: 1, on_track: 2, safe: 3, no_data: 4 } as const;
+  const rows = [...subjects].sort((a, b) => rank[a.summary.risk] - rank[b.summary.risk] || (a.summary.percent ?? 101) - (b.summary.percent ?? 101));
+  const count = (...r: Array<keyof typeof rank>) => subjects.filter((s) => r.includes(s.summary.risk)).length;
+  const low = count('below_min');
+  const risky = count('at_risk');
+  const fine = count('safe', 'on_track');
+  const pct = overall?.percent ?? null;
+  const ringColor = pct === null ? 'var(--muted)' : pct >= minAttendance ? 'var(--color-good)' : 'var(--color-critical)';
+
+  return (
+    <Card className="overflow-hidden p-0 sm:p-0">
+      <div className="relative p-4 sm:p-5" style={{ background: 'linear-gradient(150deg, var(--tint-mint) 0%, var(--tint-gold) 55%, var(--surface) 100%)' }}>
+        <SectionTitle action={<Link to="/attendance" className="text-xs font-medium text-accent">Details</Link>}>Attendance</SectionTitle>
+        {pct === null ? (
+          <p className="text-sm text-ink-2">Mark your classes as present or absent and your attendance will show here.</p>
+        ) : (
+          <div className="flex items-center gap-4">
+            <ProgressRing value={pct} size={84} stroke={8} color={ringColor} label="Overall attendance">
+              <span className="flex flex-col items-center leading-none">
+                <span className="text-lg font-semibold tabular">{fmtPct(pct)}</span>
+                <span className="mt-0.5 text-[10px] text-muted">overall</span>
+              </span>
+            </ProgressRing>
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm text-ink-2">
+                <span className="font-semibold text-ink tabular">{overall!.present}</span> of <span className="tabular">{overall!.conducted}</span> classes attended
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {fine > 0 && <StatusChip color="var(--mint-ink)" bg="var(--tint-mint)" label={`${fine} on track`} />}
+                {risky > 0 && <StatusChip color="var(--gold-ink)" bg="var(--gold-soft)" label={`${risky} at risk`} />}
+                {low > 0 && <StatusChip color="var(--rose-ink)" bg="var(--tint-rose)" label={`${low} below ${minAttendance}%`} />}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {rows.length > 0 && (
+        <ul className="space-y-2.5 p-4 pt-3 sm:p-5 sm:pt-4">
+          {rows.map(({ subject, summary, thresholds }) => {
+            const warn = summary.risk === 'at_risk' || summary.risk === 'below_min';
+            const color = riskColor(summary.risk);
+            return (
+              <li key={subject.id} className="rounded-xl border border-line p-3" style={{ background: `color-mix(in srgb, ${subject.color} 5%, var(--surface))` }}>
+                <div className="flex items-center gap-2.5">
+                  <SubjectDot color={subject.color} className="size-3" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{subject.name}</div>
+                    <div className="text-[11px] text-muted tabular">
+                      {summary.present}/{summary.conducted} attended
+                      {!warn && summary.canMissForMin > 0 && ` · can miss ${summary.canMissForMin}`}
+                    </div>
+                  </div>
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular"
+                    style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color: warn ? (summary.risk === 'below_min' ? 'var(--critical-ink)' : 'var(--warning-ink)') : 'var(--good-ink)' }}
+                  >
+                    {warn && <AlertTriangle className="size-3" aria-label="At risk" />}
+                    {fmtPct(summary.percent)}
+                  </span>
+                </div>
+                <div className="mt-2.5">
+                  <Meter value={summary.percent} color={color} marker={thresholds.min} label={`${subject.name} attendance`} />
+                </div>
+                {warn && <p className="mt-2 text-xs leading-relaxed text-ink-2">{summary.advice}</p>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function StatusChip({ label, color, bg }: { label: string; color: string; bg: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: bg, color }}>
+      <span aria-hidden className="size-1.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
 }

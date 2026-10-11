@@ -65,17 +65,44 @@
   --color-good-ink: var(--good-ink);
   --color-critical-ink: var(--critical-ink);
   --color-warning-ink: var(--warning-ink);
+
+  /* Warm golden highlight and light pastel tints for cards and icons. */
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-ink: var(--gold-ink);
+  --color-tint-sky: var(--tint-sky);
+  --color-tint-mint: var(--tint-mint);
+  --color-tint-gold: var(--tint-gold);
+  --color-tint-rose: var(--tint-rose);
+  --color-tint-lilac: var(--tint-lilac);
+  --color-sky-ink: var(--sky-ink);
+  --color-mint-ink: var(--mint-ink);
+  --color-rose-ink: var(--rose-ink);
+  --color-lilac-ink: var(--lilac-ink);
 }
 
 :root {
   color-scheme: light;
-  --page: #f4f5f8;
+  /* Warm cream page with white cards. */
+  --page: #fbf8f1;
   --surface: #ffffff;
-  --surface-2: #f1f3f7;
-  --ink: #0e1116;
-  --ink-2: #464c5a;
-  --muted: #767c8c;
-  --line: #e3e6ec;
+  --surface-2: #f6f2e9;
+  --ink: #14130f;
+  --ink-2: #4a4740;
+  --muted: #77726a;
+  --line: #ece5d7;
+  --gold: #e3ad2e;
+  --gold-soft: #fdf3d7;
+  --gold-ink: #85600b;
+  --tint-sky: #e9f3ff;
+  --tint-mint: #e7f8ef;
+  --tint-gold: #fdf4dc;
+  --tint-rose: #fdecef;
+  --tint-lilac: #f1edfe;
+  --sky-ink: #1f65b8;
+  --mint-ink: #157347;
+  --rose-ink: #b23a55;
+  --lilac-ink: #6544c4;
   --accent: #4f46e5;
   --accent-ink: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, white);
@@ -93,6 +120,18 @@
   --ink-2: #b4b8c3;
   --muted: #858b99;
   --line: #272b34;
+  --gold: #f0c35a;
+  --gold-soft: color-mix(in srgb, #f0c35a 14%, #15171c);
+  --gold-ink: #f3cd73;
+  --tint-sky: color-mix(in srgb, #5aa4ff 12%, #14161b);
+  --tint-mint: color-mix(in srgb, #3fd28a 11%, #14161b);
+  --tint-gold: color-mix(in srgb, #f0c35a 12%, #14161b);
+  --tint-rose: color-mix(in srgb, #ff7a99 11%, #14161b);
+  --tint-lilac: color-mix(in srgb, #a68bff 12%, #14161b);
+  --sky-ink: #8cc0ff;
+  --mint-ink: #6fe0a6;
+  --rose-ink: #ff9fb4;
+  --lilac-ink: #bfaaff;
   --accent: #818cf8;
   --accent-ink: #0b0c0f;
   --accent-soft: color-mix(in srgb, var(--accent) 16%, #15171c);
@@ -107,9 +146,15 @@ body {
   color: var(--ink);
 }
 
+/* Soft light washes: gold top-left, accent top-right, a hint of rose and mint lower down. */
 body {
-  background-image: radial-gradient(1100px 420px at 50% -220px, color-mix(in srgb, var(--accent) 9%, transparent), transparent);
+  background-image:
+    radial-gradient(900px 480px at 0% -160px, color-mix(in srgb, var(--gold) 16%, transparent), transparent),
+    radial-gradient(900px 460px at 100% -180px, color-mix(in srgb, var(--accent) 11%, transparent), transparent),
+    radial-gradient(700px 420px at 100% 70%, color-mix(in srgb, #ff8fab 6%, transparent), transparent),
+    radial-gradient(700px 420px at 0% 100%, color-mix(in srgb, #3fd28a 5%, transparent), transparent);
   background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 body {
