@@ -29,6 +29,38 @@ export interface CopilotMessage {
   /** Files the student attached (metadata + image thumbnails; the files themselves aren't stored). */
   attachments?: AttachmentMeta[];
   quiz?: { topic: string; count: 5 | 10 | 20; difficulty: 'easy' | 'medium' | 'hard' | 'mixed'; autoStart: boolean; started: boolean };
+  /** Pictures AI Pilot drew for this reply (kept on the device as compressed data URLs). */
+  images?: ChatImage[];
+}
+
+export interface ChatImage {
+  prompt: string;
+  caption: string | null;
+  status: 'loading' | 'ready' | 'error';
+  src?: string;
+  error?: string;
+}
+
+/** Re-encode a generated picture as a reasonably small JPEG so chat history stays light. */
+async function compressImage(mimeType: string, data: string, maxSide = 1536): Promise<string> {
+  const original = `data:${mimeType};base64,${data}`;
+  try {
+    const img = new Image();
+    img.src = original;
+    await img.decode();
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return original;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.88);
+  } catch {
+    return original;
+  }
 }
 
 interface CommandResponse {
@@ -36,6 +68,7 @@ interface CommandResponse {
   intents: AIIntent[];
   rejected: Array<{ action: string; reason: string }>;
   clarification: { question: string; options: string[] } | null;
+  image?: { prompt: string; caption: string | null } | null;
 }
 
 interface CopilotState {
@@ -55,6 +88,7 @@ interface CopilotState {
   toggleItem(messageId: string, proposalId: string, key: string): void;
   undo(messageId: string, proposalId: string): Promise<void>;
   markQuizStarted(messageId: string): void;
+  drawImage(messageId: string, index: number): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -122,7 +156,13 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
       // One shared load: opening the panel and sending (e.g. "Ask AI" on Home) both call this
       // at once, and a second, later load used to replace the just-sent message with old history.
       loading ??= (async () => {
-        const history = (await kvGet<CopilotMessage[]>(HISTORY_KEY)) ?? [];
+        const saved = (await kvGet<CopilotMessage[]>(HISTORY_KEY)) ?? [];
+        // A picture still drawing when the app closed never finished: offer a retry instead.
+        const history = saved.map((m) =>
+          m.images?.some((i) => i.status === 'loading')
+            ? { ...m, images: m.images.map((i) => (i.status === 'loading' ? { ...i, status: 'error' as const, error: 'Drawing was interrupted.' } : i)) }
+            : m,
+        );
         // Keep anything added while history was loading.
         set({ messages: [...history, ...get().messages.filter((m) => !history.some((h) => h.id === m.id))], loaded: true });
       })();
@@ -193,7 +233,8 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
         if (res.clarification && !reply.clarification) {
           reply.clarification = { question: res.clarification.question, options: res.clarification.options.map((o) => ({ label: o, send: o })) };
         }
-        if (!reply.content && !reply.proposals?.length && !reply.clarification && !reply.notices?.length) reply.content = "I'm not sure how to help with that.";
+        if (res.image) reply.images = [{ prompt: res.image.prompt, caption: res.image.caption, status: 'loading' }];
+        if (!reply.content && !reply.proposals?.length && !reply.clarification && !reply.notices?.length && !reply.images) reply.content = "I'm not sure how to help with that.";
 
         // A corrected proposal replaces the earlier pending one of the same kind.
         const newActions = new Set((reply.proposals ?? []).map((p) => p.action));
@@ -205,6 +246,7 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
           ),
         });
         append(reply);
+        if (reply.images) void get().drawImage(reply.id, 0);
         // Areas set to "Full access" apply straight away (still logged and undoable).
         for (const p of reply.proposals ?? []) {
           if (canAutoApply(p.action, settings.aiPermissions)) {
@@ -216,6 +258,22 @@ export const useCopilot = createStore<CopilotState>((set, get) => {
         append({ ...reply, content: err instanceof ApiError ? `⚠ ${err.message}` : '⚠ Something went wrong. Please try again.' });
       } finally {
         set({ busy: false });
+      }
+    },
+
+    async drawImage(messageId, index) {
+      const patch = (img: Partial<ChatImage>) => {
+        set({ messages: get().messages.map((m) => (m.id === messageId && m.images ? { ...m, images: m.images.map((x, i) => (i === index ? { ...x, ...img } : x)) } : m)) });
+        persist();
+      };
+      const image = get().messages.find((m) => m.id === messageId)?.images?.[index];
+      if (!image) return;
+      patch({ status: 'loading', error: undefined });
+      try {
+        const res = await api<{ mimeType: string; data: string }>('/api/ai/image', { body: { prompt: image.prompt } });
+        patch({ status: 'ready', src: await compressImage(res.mimeType, res.data) });
+      } catch (err) {
+        patch({ status: 'error', error: err instanceof ApiError ? err.message : "Couldn't draw the picture." });
       }
     },
 

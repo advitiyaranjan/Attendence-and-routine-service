@@ -15,7 +15,7 @@ import {
 } from '@student-os/core';
 import { env } from '../../env';
 import { HttpError } from '../../lib/http';
-import { GeminiClient } from './gemini';
+import { GeminiClient, ThinkingLevel } from './gemini';
 import * as P from './prompts';
 
 export interface UploadedFile {
@@ -79,17 +79,19 @@ export type AIPower = 'low' | 'balanced' | 'high' | 'maximum';
  * AI Power (a user-only setting): which models AI Pilot tries first and how much
  * of the conversation it sees. Every tier still falls back to the default chain.
  */
-export function powerTier(power: AIPower, chain: string[]): { models: string[]; history: number } {
+export function powerTier(power: AIPower, chain: string[]): { models: string[]; history: number; thinking: ThinkingLevel } {
   const lead = (m: string) => [m, ...chain.filter((x) => x !== m)];
+  // Lower thinking answers in a few seconds instead of tens; AI Pilot's work is mostly lookup and
+  // structured actions, so only the top tiers think harder.
   switch (power) {
     case 'low':
-      return { models: lead(env.GEMINI_LITE_MODEL), history: 8 };
+      return { models: lead(env.GEMINI_LITE_MODEL), history: 8, thinking: ThinkingLevel.MINIMAL };
     case 'high':
-      return { models: chain, history: 24 };
+      return { models: chain, history: 24, thinking: ThinkingLevel.MEDIUM };
     case 'maximum':
-      return { models: lead(env.GEMINI_PRO_MODEL), history: 32 };
+      return { models: lead(env.GEMINI_PRO_MODEL), history: 32, thinking: ThinkingLevel.HIGH };
     default:
-      return { models: chain, history: 16 };
+      return { models: chain, history: 16, thinking: ThinkingLevel.LOW };
   }
 }
 
@@ -151,6 +153,7 @@ export class AIService {
       feature: 'command',
       userId,
       models: tier.models,
+      thinking: tier.thinking,
       system: P.commandSystem(today, WEEKDAYS[weekdayOf(today)]!, actionCatalog(permissions)),
       parts: [
         contextPart(context),
@@ -162,7 +165,12 @@ export class AIService {
       schema: commandResponseSchema,
     });
     const { intents, rejected } = validateIntents(raw.actions, permissions);
-    return { reply: raw.reply, intents, rejected, clarification: raw.clarification };
+    return { reply: raw.reply, intents, rejected, clarification: raw.clarification, image: raw.image };
+  }
+
+  /** A picture for AI Pilot's chat. */
+  async image(userId: string | null, prompt: string) {
+    return this.gemini.generateImage({ userId, prompt, models: env.GEMINI_IMAGE_MODELS });
   }
 
   async generateFlashcards(userId: string | null, topic: string, notes: string | undefined, count: number) {

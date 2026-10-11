@@ -14,6 +14,7 @@ import { ACCEPT, formatSize, MAX_FILES, MAX_TOTAL_BYTES, prepareAttachment, type
 import type { Proposal } from '../../lib/copilot/registry';
 import { inAppHref, linkifySettings } from '../../lib/copilot/links';
 import { QuizRunner } from '../StudyTools';
+import { ChatImage, CopyButton, MessageImages } from './ChatExtras';
 import { Button, Checkbox, cn, Input, isOverlayEntry, Select, Textarea, useBackToClose } from '../ui';
 
 function greeting() {
@@ -421,9 +422,17 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
     <div className="min-w-0 max-w-[92%] animate-rise space-y-2 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm shadow-card">
       {m.content && (
         <div className="prose-sm">
-          <ReactMarkdown components={{ a: ({ href, children }) => <ReplyLink href={href}>{children}</ReplyLink> }}>{linkifySettings(m.content)}</ReactMarkdown>
+          <ReactMarkdown
+            components={{
+              a: ({ href, children }) => <ReplyLink href={href}>{children}</ReplyLink>,
+              img: ({ src, alt }) => (typeof src === 'string' && src ? <ChatImage src={src} alt={alt ?? ''} /> : null),
+            }}
+          >
+            {linkifySettings(m.content)}
+          </ReactMarkdown>
         </div>
       )}
+      <MessageImages m={m} />
       {m.notices?.map((n, i) => (
         <p key={i} className="flex items-start gap-1.5 text-xs text-ink-2">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-muted" /> {n}
@@ -459,6 +468,11 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
         </Link>
       ))}
       {m.quiz && <QuizLauncher message={m} />}
+      {m.content && (
+        <div className="-mb-1 -ml-1.5 flex">
+          <CopyButton text={m.content} />
+        </div>
+      )}
     </div>
   );
 }
@@ -633,7 +647,8 @@ export function CopilotChat({ compact = false, initialPrompt }: { compact?: bool
                   ))}
                 </div>
               ) : null}
-              <p className="max-w-[85%] animate-rise whitespace-pre-wrap rounded-2xl rounded-tr-md bg-accent px-4 py-2.5 text-sm text-accent-ink">{m.content}</p>
+              <p className="bubble-gold max-w-[85%] animate-rise whitespace-pre-wrap rounded-2xl rounded-tr-md px-4 py-2.5 text-sm">{m.content}</p>
+              <CopyButton text={m.content} className="-mt-1" />
             </div>
           ) : (
             <div key={m.id} className="flex justify-start">

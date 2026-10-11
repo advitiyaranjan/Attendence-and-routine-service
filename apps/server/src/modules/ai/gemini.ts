@@ -1,4 +1,4 @@
-import { GoogleGenAI, type Part } from '@google/genai';
+import { GoogleGenAI, Modality, ThinkingLevel, type GenerateContentResponse, type Part } from '@google/genai';
 import { extractJson } from '@student-os/core';
 import type { ZodType } from 'zod';
 import { prisma } from '../../db';
@@ -13,7 +13,11 @@ export interface GenerateOptions<T> {
   schema: ZodType<T>;
   /** Model chain to try for this request (defaults to the configured chain). */
   models?: string[];
+  /** How much the model reasons before answering. Lower is much faster; omitted = the model's default. */
+  thinking?: ThinkingLevel;
 }
+
+export { ThinkingLevel };
 
 /** HTTP status of a Gemini SDK error (from `.status`, or the JSON error body in the message). */
 export function statusOf(err: unknown): number {
@@ -68,7 +72,11 @@ export class GeminiClient {
    * Call the primary model, falling back to the next one when a model is
    * overloaded, rate-limited or unavailable (503 / 429 / 404 / 500).
    */
-  private async callWithFallback(request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>, deadline: number, models: string[] = this.models) {
+  private async callWithFallback(
+    request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>,
+    deadline: number,
+    models: string[] = this.models,
+  ): Promise<GenerateContentResponse> {
     let lastErr: unknown;
     // Two passes over the chain; Google-side overloads are usually brief.
     for (const [pass, delay] of [0, this.retryDelayMs].entries()) {
@@ -89,6 +97,11 @@ export class GeminiClient {
           lastErr = err;
           if (Date.now() >= deadline - 500) throw new DeadlineError('Gemini request timed out');
           const status = statusOf(err);
+          // A model that doesn't take a thinking level: try it again without one.
+          if (status === 400 && request.config?.thinkingConfig && /thinking/i.test(String((err as Error)?.message))) {
+            const { thinkingConfig: _drop, ...config } = request.config;
+            return this.callWithFallback({ ...request, config }, deadline, models);
+          }
           if (![404, 429, 500, 503].includes(status)) throw err;
           console.warn(`[ai] ${model} unavailable (${status}), pass ${pass + 1}`);
         }
@@ -120,7 +133,11 @@ export class GeminiClient {
         const response = await this.callWithFallback(
           {
             contents: [{ role: 'user', parts }],
-            config: { systemInstruction: opts.system, responseMimeType: 'application/json' },
+            config: {
+              systemInstruction: opts.system,
+              responseMimeType: 'application/json',
+              ...(opts.thinking ? { thinkingConfig: { thinkingLevel: opts.thinking } } : {}),
+            },
           },
           deadline,
           opts.models,
@@ -158,6 +175,29 @@ export class GeminiClient {
     }
     console.warn(`[ai:${opts.feature}] invalid output after retry: ${lastError}`);
     throw new HttpError(422, 'ai_invalid_output', "The AI couldn't produce a usable result. Try rephrasing or try again.");
+  }
+
+  /** Generates one picture from a description. Returns base64 image data. */
+  async generateImage(opts: { userId: string | null; prompt: string; models: string[] }): Promise<{ mimeType: string; data: string }> {
+    if (!this.ai) throw new HttpError(503, 'ai_unavailable', 'AI features are not configured on this server.');
+    const deadline = Date.now() + this.budgetMs;
+    const record = { feature: 'image', userId: opts.userId, system: '', parts: [], schema: null as never };
+    try {
+      const response = await this.callWithFallback(
+        { contents: [{ role: 'user', parts: [{ text: opts.prompt }] }], config: { responseModalities: [Modality.TEXT, Modality.IMAGE] } },
+        deadline,
+        opts.models,
+      );
+      const image = response.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+      await this.record(record, { input: response.usageMetadata?.promptTokenCount ?? 0, output: response.usageMetadata?.candidatesTokenCount ?? 0 }, !!image);
+      if (!image?.data) throw new HttpError(422, 'ai_no_image', "The AI couldn't draw that. Try describing the picture differently.");
+      return { mimeType: image.mimeType ?? 'image/png', data: image.data };
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      console.error('[ai:image] failed', statusOf(err), String((err as Error)?.message).slice(0, 300));
+      await this.record(record, { input: 0, output: 0 }, false);
+      throw toHttpError(err);
+    }
   }
 
   private async record(opts: GenerateOptions<unknown>, usage: { input: number; output: number }, success: boolean) {

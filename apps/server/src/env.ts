@@ -18,6 +18,11 @@ const schema = z
       .string()
       .default('gemini-3.7-flash,gemini-3.5-flash,gemini-3.1-flash-lite')
       .transform((v) => v.split(',').map((m) => m.trim()).filter(Boolean)),
+    /** Image models for pictures in AI Pilot, tried in order. */
+    GEMINI_IMAGE_MODELS: z
+      .string()
+      .default('gemini-3-pro-image-preview,gemini-2.5-flash-image')
+      .transform((v) => v.split(',').map((m) => m.trim()).filter(Boolean)),
     GOOGLE_CLIENT_ID: z.string().optional(),
     /** Android OAuth client (package + SHA-1). Tokens issued for it are accepted too. */
     GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),

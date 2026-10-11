@@ -959,6 +959,12 @@ export const commandResponseSchema = z.object({
     .object({ question: z.string().max(1000), options: z.array(z.string().max(300)).max(10).default([]) })
     .nullish()
     .transform((v) => v ?? null),
+  /** A picture to generate and show in the chat (diagram, illustration, visual explanation). */
+  image: z
+    .object({ prompt: z.string().trim().min(1).max(2000), caption: z.string().max(200).nullish().transform((v) => v ?? null) })
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
 });
 
 /** Catalog text for the system prompt, limited to what the student allows. */

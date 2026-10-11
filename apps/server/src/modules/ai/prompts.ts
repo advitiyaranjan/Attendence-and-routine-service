@@ -40,8 +40,14 @@ Return ONLY JSON:
 {
   "reply": string,
   "actions": [ { "action": "<name>", "params": { ... } } ],
-  "clarification": null | { "question": string, "options": string[] }
+  "clarification": null | { "question": string, "options": string[] },
+  "image": null | { "prompt": string, "caption": string }
 }
+
+Pictures: when the student asks for an image, picture, diagram, chart, map, illustration or a visual explanation, set
+"image" with a detailed drawing prompt (subject, layout, labels spelled exactly, clean educational style, white
+background unless asked otherwise) and a short caption; the app draws it and shows it in the chat. Keep "reply" to a
+sentence or two about the picture. Never put image URLs or markdown images in "reply". Otherwise "image" is null.
 
 Available actions (you may ONLY use these):
 ${catalog || '(none: the student has not permitted any changes, so answer questions only)'}

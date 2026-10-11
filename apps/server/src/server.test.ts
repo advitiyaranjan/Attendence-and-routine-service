@@ -3,7 +3,7 @@ import request from 'supertest';
 import { timetableExtractionSchema, type SyncOperation } from '@student-os/core';
 import { createApp } from './app';
 import { validateOperation } from './modules/sync/service';
-import { GeminiClient, statusOf } from './modules/ai/gemini';
+import { GeminiClient, statusOf, ThinkingLevel } from './modules/ai/gemini';
 import { HttpError } from './lib/http';
 import { prisma } from './db';
 import { signActionToken, verifyActionToken } from './modules/push/scheduler';
@@ -131,6 +131,36 @@ describe('Gemini output validation', () => {
     expect(config.temperature).toBeUndefined();
     expect(config.httpOptions.timeout).toBeGreaterThan(0);
     expect(config.httpOptions.timeout).toBeLessThanOrEqual(client.budgetMs);
+  });
+
+  it('passes a thinking level, and retries without it when a model rejects it', async () => {
+    const { client, generateContent } = clientReturning('{"subjects":[]}');
+    await client.generateJson({ ...opts, thinking: ThinkingLevel.LOW });
+    expect(generateContent.mock.calls[0]![0].config.thinkingConfig).toEqual({ thinkingLevel: ThinkingLevel.LOW });
+
+    const strict = new GeminiClient('k', 'old-model');
+    const call = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('Thinking level is not supported for this model.'), { status: 400 }))
+      .mockResolvedValueOnce({ text: '{"subjects":[]}', usageMetadata: {} });
+    (strict as unknown as { ai: unknown }).ai = { models: { generateContent: call } };
+    await strict.generateJson({ ...opts, thinking: ThinkingLevel.LOW });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls[1]![0].config.thinkingConfig).toBeUndefined();
+  });
+
+  it('returns the first picture from an image model, falling back when one is unavailable', async () => {
+    const client = new GeminiClient('k', 'text-model');
+    const generateContent = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
+      .mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: 'Here it is' }, { inlineData: { mimeType: 'image/png', data: 'AAAA' } }] } }], usageMetadata: {} });
+    (client as unknown as { ai: unknown }).ai = { models: { generateContent } };
+    await expect(client.generateImage({ userId: null, prompt: 'a cell diagram', models: ['img-a', 'img-b'] })).resolves.toEqual({ mimeType: 'image/png', data: 'AAAA' });
+    expect(generateContent.mock.calls.map((c) => c[0].model)).toEqual(['img-a', 'img-b']);
+
+    generateContent.mockReset().mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: 'no picture' }] } }], usageMetadata: {} });
+    await expect(client.generateImage({ userId: null, prompt: 'x', models: ['img-a'] })).rejects.toMatchObject({ status: 422 });
   });
 
   it('reports unavailability when no API key is configured', async () => {

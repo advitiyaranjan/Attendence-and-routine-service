@@ -222,7 +222,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
 }
 
 /** Stay well under the server's cap (150k characters) so a large timetable or goal never blocks AI Pilot. */
-const CONTEXT_BUDGET = 100_000;
+const CONTEXT_BUDGET = 60_000;
 
 /**
  * Shrinks the context until it fits: repeatedly halves the largest list (keeping its first, most

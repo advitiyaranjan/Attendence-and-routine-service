@@ -289,3 +289,26 @@ html.reduce-motion *::after {
 html.reduce-motion .confetti {
   display: none;
 }
+
+/* Selected text stays readable everywhere: a soft gold highlight with the normal text colour. */
+::selection {
+  background: color-mix(in srgb, var(--gold) 42%, transparent);
+  color: var(--ink);
+}
+
+/* The student's own chat messages: premium gold with dark text in both themes. */
+.bubble-gold {
+  background: linear-gradient(135deg, #fbe7a6 0%, #f1cf6e 55%, #e3b24a 100%);
+  color: #2b1f04;
+  border: 1px solid color-mix(in srgb, #c9952a 45%, transparent);
+  box-shadow: 0 1px 2px rgb(120 84 10 / 0.12), 0 6px 16px -8px rgb(150 105 20 / 0.45);
+}
+.dark .bubble-gold {
+  background: linear-gradient(135deg, #f3d987 0%, #e2b85a 55%, #c9952f 100%);
+  color: #221800;
+}
+.bubble-gold::selection,
+.bubble-gold *::selection {
+  background: rgb(255 255 255 / 0.75);
+  color: #221800;
+}

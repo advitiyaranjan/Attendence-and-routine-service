@@ -88,6 +88,11 @@ aiRouter.post('/command', commandUpload.array('files', 4), async (req, res) => {
   res.json(await ai.command(req.userId ?? null, body.messages, body.context, body.today, permissions, files, power));
 });
 
+aiRouter.post('/image', async (req, res) => {
+  const body = parseBody(z.object({ prompt: z.string().trim().min(1).max(2000) }), req.body);
+  res.json(await ai.image(req.userId ?? null, body.prompt));
+});
+
 aiRouter.post('/flashcards', async (req, res) => {
   const body = parseBody(
     z.object({ topic: z.string().trim().min(1).max(300), notes: z.string().max(30_000).optional(), count: z.number().int().min(1).max(30).default(10) }),
