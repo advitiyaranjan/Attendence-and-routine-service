@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, CalendarClock, ChartPie, Check, FilePlus2, Flame, ListChecks, MoreHorizontal, Repeat, Sparkles, Target, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarClock, ChartPie, Check, CheckSquare, FilePlus2, Flame, History, ListChecks, MoreHorizontal, Mountain, Repeat, Sparkles, Target, Timer, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
 import {
   addDays,
   HOME_SECTIONS,
@@ -27,6 +27,8 @@ import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
 import { copiesOf, isRoadmapBacklog, normTitle, scheduledKeys, selfStudyMinutes, taskDay } from '../lib/plan';
 import { HomeGoals } from '../components/goals/HomeGoals';
+import { ProgressRing } from '../components/goals/visuals';
+import { useApp } from '../lib/store';
 import { toast } from '../lib/store';
 import { RatingButtons } from './Revision';
 
@@ -136,15 +138,16 @@ export function Dashboard() {
   return (
     <HomeLayout.Provider value={settings.app.homeSections}>
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          {greeting(now)}
-          {firstName ? `, ${firstName}` : ''} 👋
-        </h1>
-        <p className="mt-1 text-sm text-ink-2">
-          {dateLabel} · {planLine}
-        </p>
-      </div>
+      <Hero
+        greeting={`${greeting(now)}${firstName ? `, ${firstName}` : ''}`}
+        dateLabel={dateLabel}
+        planLine={planLine}
+        done={todayWorkDone}
+        total={todayWork}
+        streak={streak}
+        studied={studyToday}
+        target={settings.dailyStudyTargetMinutes}
+      />
 
       <AskAI placeholder="Ask AI anything…" prompts={['What do I need to do today?', 'Plan my day', 'How is my attendance?']} />
 
@@ -482,6 +485,66 @@ function EventRow({ e, subjects, minutesNow, also }: { e: CalendarEvent; subject
   );
 }
 
+const QUICK: Array<{ kind: string; label: string; icon: LucideIcon }> = [
+  { kind: 'task', label: 'Task', icon: CheckSquare },
+  { kind: 'study', label: 'Study session', icon: Timer },
+  { kind: 'goal', label: 'Goal', icon: Mountain },
+  { kind: 'log', label: 'Log study', icon: History },
+];
+
+/** Command center: where the day stands (work done, streak, study time) and one-tap actions. */
+function Hero({ greeting, dateLabel, planLine, done, total, streak, studied, target }: { greeting: string; dateLabel: string; planLine: string; done: number; total: number; streak: number; studied: number; target: number }) {
+  const openQuickAdd = useApp((s) => s.openQuickAdd);
+  const pct = total ? (done / total) * 100 : 0;
+  return (
+    <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 shadow-card sm:p-6">
+      <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 size-80 rounded-full bg-accent/12 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-16 size-64 rounded-full bg-accent/6 blur-3xl" />
+      <div className="relative flex items-start gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{dateLabel}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{greeting} 👋</h1>
+          <p className="mt-1 text-sm text-ink-2">{planLine}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-2">
+              <Flame className="size-3.5" style={{ color: streak ? 'var(--color-serious)' : 'var(--muted)' }} />
+              {streak ? `${streak}-day streak` : 'Start a streak today'}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-2 tabular">
+              <Target className="size-3.5 text-accent" />
+              {formatMinutes(studied)} / {formatMinutes(target)} studied
+            </span>
+          </div>
+        </div>
+        <Link to="/todos" className="shrink-0 rounded-full" aria-label={`Today: ${done} of ${total} done. Open Todos`}>
+          <ProgressRing value={pct} size={78} stroke={7} label="Today's work done">
+            <span className="flex flex-col items-center leading-none">
+              <span className="text-base font-semibold tabular">
+                {done}/{total}
+              </span>
+              <span className="mt-0.5 text-[10px] text-muted">today</span>
+            </span>
+          </ProgressRing>
+        </Link>
+      </div>
+      <div className="no-scrollbar relative -mx-5 mt-4 flex gap-2 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
+        {QUICK.map(({ kind, label, icon: Icon }) => (
+          <button
+            key={kind}
+            onClick={() => openQuickAdd(kind)}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink active:scale-[0.98]"
+          >
+            <Icon className="size-4 text-accent" /> {label}
+          </button>
+        ))}
+        <Link to="/attendance" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink">
+          <ChartPie className="size-4 text-accent" /> Attendance
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 /** Visible home cards, in order (Settings → Appearance, or ask AI Pilot). */
 const HomeLayout = createContext<readonly HomeSection[]>(HOME_SECTIONS);
 
@@ -493,7 +556,7 @@ function Slot({ k, children }: { k: HomeSection; children: ReactNode }) {
 
 function StatCard({ to, icon: Icon, label, value, sub, progress, tone }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tone?: 'good' | 'muted' }) {
   return (
-    <Link to={to} className="min-w-0 rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-colors hover:bg-surface-2 sm:p-4">
+    <Link to={to} className="min-w-0 rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-[box-shadow,transform] hover:-translate-y-px hover:shadow-lift sm:p-4">
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-2">
         <span className="truncate">{label}</span>
         <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', tone === 'good' ? 'bg-good/15 text-good-ink' : tone === 'muted' ? 'bg-surface-2 text-muted' : 'bg-accent-soft text-accent')}>

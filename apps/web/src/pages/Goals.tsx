@@ -6,13 +6,14 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ArrowRight, CalendarRange, Flag, Mountain, Plus, Target, Trophy } from 'lucide-react';
 import { goalCategory, milestoneState, type Goal, type Milestone } from '@student-os/core';
+import { GoalCalendar } from '../components/goals/GoalCalendar';
 import { NewGoalForm } from '../components/goals/GoalForms';
 import { CategoryTag, dueLabel, fmtDate, HealthPill, healthColor, PriorityTag, ProgressRing, STATE_STYLE } from '../components/goals/visuals';
 import { Button, Card, Chip, cn, EmptyState, isOverlayEntry, Modal, PageHeader, Select, Spinner, Tabs } from '../components/ui';
 import { summarizeAll, useGoalData, type GoalSummary } from '../lib/goals';
 import { useToday } from '../lib/hooks';
 
-type View = 'goals' | 'timeline' | 'achievements';
+type View = 'goals' | 'timeline' | 'calendar' | 'achievements';
 type Filter = 'active' | 'attention' | 'paused' | 'completed' | 'all';
 type Sort = 'urgency' | 'deadline' | 'priority' | 'updated' | 'progress';
 
@@ -149,6 +150,7 @@ export default function Goals() {
             options={[
               { value: 'goals', label: 'Goals' },
               { value: 'timeline', label: 'Timeline' },
+              { value: 'calendar', label: 'Calendar' },
               { value: 'achievements', label: 'Achievements' },
             ]}
           />
@@ -196,6 +198,7 @@ export default function Goals() {
           )}
 
           {view === 'timeline' && <Timeline summaries={all.filter((s) => s.goal.status === 'active')} today={today} />}
+          {view === 'calendar' && <GoalCalendar summaries={all} today={today} />}
           {view === 'achievements' && <Achievements summaries={all} />}
         </>
       )}

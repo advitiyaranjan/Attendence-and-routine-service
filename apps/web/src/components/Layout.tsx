@@ -56,26 +56,31 @@ import { AssignmentForm, EventForm, ExamForm, ExtraClassForm, NoteForm, Schedule
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppLogo, cn, isOverlayEntry, Modal } from './ui';
 
+type NavGroup = 'plan' | 'grow' | 'track';
+
 interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
   key?: string;
+  group?: NavGroup;
 }
 
-/** Primary navigation, in the order of the information architecture. */
+const GROUP_LABEL: Record<NavGroup, string> = { plan: 'Plan', grow: 'Learn & grow', track: 'Track' };
+
+/** Primary navigation, grouped by what the student is doing: planning the day, growing, keeping track. */
 export const NAV: NavItem[] = [
-  { to: '/', label: 'Home', icon: Home, key: 'g h' },
-  { to: '/assistant', label: 'AI Pilot', icon: Bot, key: 'g i' },
-  { to: '/todos', label: 'Todos', icon: ListChecks, key: 'g t' },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays, key: 'g c' },
-  { to: '/goals', label: 'Goals', icon: Mountain, key: 'g g' },
-  { to: '/revision', label: 'Revision', icon: Repeat, key: 'g r' },
-  { to: '/attendance', label: 'Attendance', icon: ChartPie, key: 'g a' },
-  { to: '/subjects', label: 'Subjects', icon: BookOpen, key: 'g s' },
-  { to: '/notes', label: 'Notes', icon: NotebookPen, key: 'g n' },
-  { to: '/deadlines', label: 'Exams', icon: ClipboardList, key: 'g e' },
-  { to: '/analytics', label: 'Analytics', icon: TrendingUp },
+  { to: '/', label: 'Home', icon: Home, key: 'g h', group: 'plan' },
+  { to: '/assistant', label: 'AI Pilot', icon: Bot, key: 'g i', group: 'plan' },
+  { to: '/todos', label: 'Todos', icon: ListChecks, key: 'g t', group: 'plan' },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, key: 'g c', group: 'plan' },
+  { to: '/goals', label: 'Goals', icon: Mountain, key: 'g g', group: 'grow' },
+  { to: '/revision', label: 'Revision', icon: Repeat, key: 'g r', group: 'grow' },
+  { to: '/subjects', label: 'Subjects', icon: BookOpen, key: 'g s', group: 'grow' },
+  { to: '/notes', label: 'Notes', icon: NotebookPen, key: 'g n', group: 'grow' },
+  { to: '/attendance', label: 'Attendance', icon: ChartPie, key: 'g a', group: 'track' },
+  { to: '/deadlines', label: 'Exams', icon: ClipboardList, key: 'g e', group: 'track' },
+  { to: '/analytics', label: 'Analytics', icon: TrendingUp, group: 'track' },
 ];
 
 /** Useful pages that aren't top-level sections. */
@@ -296,7 +301,9 @@ function ProfileMenu() {
           <SyncBadge />
         </div>
         <div className="border-b border-line px-2 pb-2 md:hidden">
-          <SheetNavGroup title="Sections" items={shown(NAV.filter((n) => !MOBILE_NAV.some((m) => m.to === n.to)))} go={go} />
+          {(['grow', 'track'] as NavGroup[]).map((g) => (
+            <SheetNavGroup key={g} title={GROUP_LABEL[g]} items={shown(NAV.filter((n) => n.group === g && !MOBILE_NAV.some((m) => m.to === n.to)))} go={go} />
+          ))}
           <SheetNavGroup title="More" items={shown(NAV_MORE)} go={go} />
         </div>
         <div className="p-2">
@@ -553,7 +560,7 @@ function SideLink({ item, compact = false }: { item: NavItem; compact?: boolean 
         cn(
           'flex h-9 items-center gap-3 overflow-hidden whitespace-nowrap rounded-xl text-sm transition-colors [&>svg]:shrink-0',
           compact ? 'justify-center px-0' : 'px-3',
-          isActive ? 'bg-accent-soft font-medium text-ink [&>svg]:text-accent' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
+          isActive ? 'bg-accent-soft font-medium text-ink shadow-[inset_3px_0_0_var(--accent)] [&>svg]:text-accent' : 'text-ink-2 hover:bg-surface-2 hover:text-ink',
         )
       }
     >
@@ -623,10 +630,19 @@ export function Layout() {
           </button>
         </div>
         <nav className="no-scrollbar flex-1 space-y-0.5 overflow-y-auto px-3 pb-3" aria-label="Main">
-          {shown(NAV).map((item) => (
-            <SideLink key={item.to} item={item} compact={!wide} />
-          ))}
-          {wide ? <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-muted">More</div> : <div className="mx-2 my-3 border-t border-line" />}
+          {(['plan', 'grow', 'track'] as NavGroup[]).map((g, i) => {
+            const items = shown(NAV.filter((n) => n.group === g));
+            if (!items.length) return null;
+            return (
+              <div key={g} className="space-y-0.5">
+                {wide ? <div className={cn('px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted', i === 0 ? 'pt-1' : 'pt-4')}>{GROUP_LABEL[g]}</div> : i > 0 && <div className="mx-2 my-2.5 border-t border-line" />}
+                {items.map((item) => (
+                  <SideLink key={item.to} item={item} compact={!wide} />
+                ))}
+              </div>
+            );
+          })}
+          {wide ? <div className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-muted">More</div> : <div className="mx-2 my-2.5 border-t border-line" />}
           {shown(NAV_MORE).map((item) => (
             <SideLink key={item.to} item={item} compact={!wide} />
           ))}
@@ -684,7 +700,7 @@ export function Layout() {
         </main>
       </div>
 
-      <nav className="hide-on-kb safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur-md md:hidden" aria-label="Main">
+      <nav className="hide-on-kb safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 shadow-[0_-8px_24px_-12px_rgb(16_24_40/0.18)] backdrop-blur-xl md:hidden" aria-label="Main">
         <div className="flex">
           {shown(MOBILE_NAV).map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cn('group flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>

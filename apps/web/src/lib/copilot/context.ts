@@ -27,7 +27,7 @@ import { db } from '../db';
 import { computeAttendance, loadSettings, occurrencesBetween } from '../queries';
 import { sortBaskets } from '../repo';
 
-export const REF = { class: 'c', task: 't', event: 'e', revision: 'r', exam: 'x', assignment: 'a', subject: 's', reminder: 'm', basket: 'b' } as const;
+export const REF = { class: 'c', task: 't', event: 'e', revision: 'r', exam: 'x', assignment: 'a', subject: 's', reminder: 'm', basket: 'b', goal: 'g', milestone: 'l' } as const;
 
 export async function buildCommandContext(): Promise<Record<string, unknown>> {
   const settings = await loadSettings();
@@ -171,6 +171,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
         const health = goalHealth(g, progress, ms, today);
         const current = currentMilestone(ms);
         return {
+          ref: refOf(REF.goal, g.id),
           title: g.title,
           category: g.category,
           status: g.status,
@@ -180,7 +181,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
           schedule: health.label,
           why: health.reasons,
           currentMilestone: current ? { title: current.title, targetDate: current.targetDate } : null,
-          milestones: ms.map((m) => ({ title: m.title, status: m.status, targetDate: m.targetDate })),
+          milestones: ms.map((m) => ({ ref: refOf(REF.milestone, m.id), title: m.title, status: m.status, targetDate: m.targetDate })),
           openTasks: gt.filter((t) => t.status !== 'done').slice(0, 10).map((t) => ({ title: t.title, planned: t.plannedDate, due: t.dueDate })),
         };
       });

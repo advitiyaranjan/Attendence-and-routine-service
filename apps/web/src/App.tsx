@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
-import type { AppPage, NotificationActionId } from '@student-os/core';
+import type { AppPage, NotificationActionId, Settings } from '@student-os/core';
 import { Layout, MorePage } from './components/Layout';
 import { AppGoogleBridge } from './components/AuthForm';
 import { Spinner, Splash } from './components/ui';
@@ -75,6 +75,8 @@ function useNotificationActions() {
   }, [navigate]);
 }
 
+const themePrefs = (s: Settings | null | undefined) => ({ theme: s?.theme ?? 'system', accent: s?.accent ?? 'indigo', density: s?.density, reduceMotion: s?.reduceMotion });
+
 /** Opens the student's chosen start page once per launch (only when the app opened on Home). */
 let startPageApplied = false;
 function useStartPage(page: AppPage | undefined) {
@@ -109,12 +111,12 @@ export function App() {
   }, [waitingForAccount]);
 
   useEffect(() => {
-    if (settings !== undefined) applyTheme(settings?.theme ?? 'system', settings?.accent ?? 'indigo');
+    if (settings !== undefined) applyTheme(themePrefs(settings));
   }, [settings]);
 
   useEffect(() => {
     const mq = matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => applyTheme(settings?.theme ?? 'system', settings?.accent ?? 'indigo');
+    const onChange = () => applyTheme(themePrefs(settings));
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, [settings]);

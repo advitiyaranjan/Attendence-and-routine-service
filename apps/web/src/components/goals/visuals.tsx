@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Ban, Check, CircleDashed, Clock3, Pause, Trophy, type LucideIcon } from 'lucide-react';
 import { diffDays, goalCategory, type GoalHealth, type GoalHealthLevel, type MilestoneState, type TaskPriority } from '@student-os/core';
+import { motionReduced } from '../../lib/theme';
 import { cn } from '../ui';
 
 /** Circular progress with the percentage printed inside. */
@@ -151,7 +152,7 @@ export function CelebrationLayer() {
   const [burst, setBurst] = useState(0);
   useEffect(() => {
     const on = () => {
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (motionReduced()) return;
       setBurst((b) => b + 1);
     };
     window.addEventListener('sos-celebrate', on);

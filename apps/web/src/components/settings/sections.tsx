@@ -16,7 +16,7 @@ import { saveSettings, sortBaskets, update } from '../../lib/repo';
 import { STUDY_TIMES } from '../../lib/setup-parse';
 import { toast, useApp } from '../../lib/store';
 import { syncNow } from '../../lib/sync';
-import { ACCENT_NAMES, accentSwatch } from '../../lib/theme';
+import { ACCENT_NAMES, accentSwatch, isCustomAccent } from '../../lib/theme';
 import { AIPermissionSettings } from './AIPermissionSettings';
 import { ChangeEmailButton } from './ChangeEmail';
 import { NotificationSettings } from './NotificationSettings';
@@ -311,20 +311,52 @@ export function AppearanceSection({ s }: { s: Settings }) {
       <SettingRow label="Theme">
         <Segmented label="Theme" value={s.theme} onChange={(v) => save({ theme: v })} options={[{ value: 'system', label: 'Auto' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
       </SettingRow>
-      <SettingRow label="Accent colour" stacked>
-        <div role="group" aria-label="Accent colour" className="flex flex-wrap gap-3">
+      <SettingRow label="Accent colour" description="Buttons, links, highlights and progress." stacked>
+        <div role="group" aria-label="Accent colour" className="flex flex-wrap items-center gap-3">
           {ACCENT_NAMES.map((a) => (
             <button
               key={a}
               onClick={() => save({ accent: a })}
               aria-label={`${a} accent`}
               aria-pressed={s.accent === a}
+              title={a[0]!.toUpperCase() + a.slice(1)}
               className="size-9 rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-ink"
               style={{ background: accentSwatch(a) }}
             />
           ))}
+          <label
+            className={cn(
+              'relative flex h-9 cursor-pointer items-center gap-2 rounded-full border border-line pl-1 pr-3 text-sm text-ink-2 ring-offset-2 ring-offset-surface hover:bg-surface-2',
+              isCustomAccent(s.accent) && 'ring-2 ring-ink',
+            )}
+            title="Pick your own colour"
+          >
+            <span className="size-7 rounded-full border border-line" style={{ background: isCustomAccent(s.accent) ? s.accent : 'conic-gradient(#ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444)' }} aria-hidden />
+            Custom
+            <input
+              type="color"
+              value={isCustomAccent(s.accent) ? s.accent : accentSwatch(s.accent)}
+              onChange={(e) => save({ accent: e.target.value.toLowerCase() })}
+              aria-label="Custom accent colour"
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </label>
         </div>
       </SettingRow>
+      <SettingRow label="Layout" description="Compact fits more on screen with slightly smaller text and spacing.">
+        <Segmented
+          label="Layout density"
+          value={s.density}
+          onChange={(v) => save({ density: v })}
+          options={[
+            { value: 'comfortable', label: 'Comfortable' },
+            { value: 'compact', label: 'Compact' },
+          ]}
+        />
+      </SettingRow>
+      <SettingBlock>
+        <Toggle checked={s.reduceMotion} onChange={(v) => save({ reduceMotion: v })} label="Reduce motion" description="Turns off animations and celebrations. Also follows your device's setting." />
+      </SettingBlock>
     </SettingsGroup>
     <AppLayoutSettings s={s} />
     </>

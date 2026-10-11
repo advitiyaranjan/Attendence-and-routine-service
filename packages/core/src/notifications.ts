@@ -20,6 +20,8 @@ import { fmtPct } from './attendance';
 import { addDays, diffDays, formatTime12, minutesToTime, timeToMinutes, weekdayOf, type ISODate } from './dates';
 import type {
   Assignment,
+  Goal,
+  Milestone,
   Basket,
   CalendarEvent,
   ClassInstance,
@@ -46,6 +48,8 @@ export type NotificationType =
   | 'task_due'
   | 'assignment_due'
   | 'exam_reminder'
+  | 'milestone_due'
+  | 'goal_due'
   | 'study_session'
   | 'event_reminder'
   | 'reminder'
@@ -112,6 +116,9 @@ export interface PlannerData {
   events: CalendarEvent[];
   reminders: Reminder[];
   baskets?: Basket[];
+  /** Optional so planners built before goals existed still type-check. */
+  goals?: Goal[];
+  milestones?: Milestone[];
 }
 
 export const toStamp = (date: ISODate, minutes: number) => diffDays('1970-01-01', date) * 1440 + minutes;
@@ -361,6 +368,54 @@ export function planNotifications(data: PlannerData, now: LocalMoment, lookbackM
     }
   }
 
+  // --- Goals and milestones (target dates) ------------------------------------------
+  if (cats.goals.enabled) {
+    const activeGoals = new Map((data.goals ?? []).filter((g) => !g.deletedAt && g.status === 'active').map((g) => [g.id, g]));
+    const dueIn = (offset: number) => (offset === 0 ? 'Due today.' : offset === 1440 ? 'Due tomorrow.' : `Due in ${Math.round(offset / 1440)} days.`);
+    const at = timeToMinutes(cats.goals.time);
+    for (const m of data.milestones ?? []) {
+      const g = activeGoals.get(m.goalId);
+      if (m.deletedAt || m.status === 'done' || !m.targetDate || !g) continue;
+      const due = toStamp(m.targetDate, at);
+      for (const offset of cats.goals.offsets) {
+        push({
+          key: `milestone:${m.id}:${m.targetDate}:${cats.goals.time}:${offset}`,
+          type: 'milestone_due',
+          category: 'goals',
+          title: '🏁 Milestone coming up',
+          body: `${m.title} · ${g.title}
+${dueIn(offset)}`,
+          entityType: 'milestone',
+          entityId: m.id,
+          stamp: due - offset,
+          expiresAt: due + 720,
+          actions: [{ action: 'open', title: 'Open roadmap' }],
+          href: `/goals/${g.id}?m=${m.id}`,
+        });
+      }
+    }
+    for (const g of activeGoals.values()) {
+      if (!g.targetDate) continue;
+      const due = toStamp(g.targetDate, at);
+      for (const offset of cats.goals.offsets) {
+        push({
+          key: `goal:${g.id}:${g.targetDate}:${cats.goals.time}:${offset}`,
+          type: 'goal_due',
+          category: 'goals',
+          title: '🎯 Goal target date',
+          body: `${g.title}
+${dueIn(offset)} Reschedule it if you need more time.`,
+          entityType: 'goal',
+          entityId: g.id,
+          stamp: due - offset,
+          expiresAt: due + 720,
+          actions: [{ action: 'open', title: 'Open goal' }],
+          href: `/goals/${g.id}`,
+        });
+      }
+    }
+  }
+
   // --- Study sessions and timed events ---------------------------------------------
   for (const ev of data.events) {
     if (ev.deletedAt || ev.completedAt || !ev.startTime) continue;
@@ -560,6 +615,7 @@ export const NOTIFICATION_CATEGORY_LABEL: Record<NotificationCategory, string> =
   tasks: 'Tasks',
   assignments: 'Assignments',
   exams: 'Exams',
+  goals: 'Goals & milestones',
   studySessions: 'Study sessions',
   dailyReview: 'Daily review',
   weeklyReview: 'Weekly review',

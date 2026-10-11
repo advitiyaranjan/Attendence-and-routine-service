@@ -8,6 +8,8 @@ import {
   refOf,
   reminderDates,
   settingsSchema,
+  goalSchema,
+  milestoneSchema,
   validateIntents,
   canAutoApply,
   PERMISSION_LABEL,
@@ -74,6 +76,24 @@ describe('notification planner', () => {
     const planned = planNotifications(data({ settings: s }), at(12 * 60), 180, 0);
     expect(planned.filter((n) => n.type === 'class_reminder').map((n) => n.time)).toEqual(['09:30', '09:55']);
     expect(planned.some((n) => n.type === 'attendance_prompt')).toBe(false);
+  });
+
+  it('reminds about milestone and goal target dates, only for active goals and open milestones', () => {
+    const goal = goalSchema.parse({ ...meta('g1'), title: 'Internship', startDate: '2026-09-01', targetDate: '2026-10-09' });
+    const paused = goalSchema.parse({ ...meta('g2'), title: 'Paused', startDate: '2026-09-01', targetDate: '2026-10-03', status: 'paused' });
+    const milestones = [
+      milestoneSchema.parse({ ...meta('m1'), goalId: 'g1', title: 'Resume ready', targetDate: '2026-10-03' }),
+      milestoneSchema.parse({ ...meta('m2'), goalId: 'g1', title: 'Done already', targetDate: '2026-10-03', status: 'done' }),
+      milestoneSchema.parse({ ...meta('m3'), goalId: 'g2', title: 'Of a paused goal', targetDate: '2026-10-03' }),
+    ];
+    const planned = planNotifications(data({ goals: [goal, paused], milestones }), at(0), 0, 10 * 24 * 60);
+    const ms = planned.filter((n) => n.type === 'milestone_due');
+    expect(ms.map((n) => [n.entityId, n.date, n.time])).toEqual([
+      ['m1', '2026-10-02', '09:00'],
+      ['m1', '2026-10-03', '09:00'],
+    ]);
+    expect(ms[0]!.href).toBe('/goals/g1?m=m1');
+    expect(planned.filter((n) => n.type === 'goal_due').map((n) => n.date)).toEqual(['2026-10-02', '2026-10-08', '2026-10-09']);
   });
 
   it('reminds about tasks, assignments and exams at their offsets', () => {

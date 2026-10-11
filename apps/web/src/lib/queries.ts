@@ -33,7 +33,7 @@ export async function computeAttendance(settings: Settings, today: ISODate): Pro
 
 /** Everything the notification planner needs, straight from IndexedDB. */
 export async function loadPlannerData(): Promise<PlannerData> {
-  const [settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders, baskets] = await Promise.all([
+  const [settings, subjects, schedules, instances, tasks, revisions, topics, exams, assignments, events, reminders, baskets, goals, milestones] = await Promise.all([
     loadSettings(),
     db.entity('subject').toArray(),
     db.entity('classSchedule').toArray(),
@@ -46,6 +46,8 @@ export async function loadPlannerData(): Promise<PlannerData> {
     db.entity('calendarEvent').toArray(),
     db.entity('reminder').toArray(),
     db.entity('basket').toArray(),
+    db.entity('goal').toArray(),
+    db.entity('milestone').toArray(),
   ]);
   return {
     settings,
@@ -60,5 +62,7 @@ export async function loadPlannerData(): Promise<PlannerData> {
     events: live(events),
     reminders: live(reminders),
     baskets: live(baskets),
+    goals: live(goals),
+    milestones: live(milestones),
   };
 }

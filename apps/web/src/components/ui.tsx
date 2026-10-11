@@ -86,8 +86,8 @@ export function PageHeader({ title, subtitle, actions, back }: { title: string; 
       <div className="flex min-w-0 items-start gap-2">
         {showBack && <BackButton className="mt-0.5 sm:mt-1" />}
         <div className="min-w-0">
-        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-ink-2">{subtitle}</p>}
+        <h1 className="text-[22px] font-semibold leading-tight tracking-tight sm:text-[28px]">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-ink-2">{subtitle}</p>}
         </div>
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -212,8 +212,8 @@ export function Meter({ value, color, marker, label }: { value: number | null; c
 
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line px-6 py-10 text-center">
-      {icon && <div className="text-muted">{icon}</div>}
+    <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line bg-surface/50 px-6 py-10 text-center">
+      {icon && <div className="mb-1 flex size-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">{icon}</div>}
       <p className="font-medium">{title}</p>
       {body && <p className="max-w-sm text-sm text-ink-2">{body}</p>}
       {action && <div className="mt-2">{action}</div>}

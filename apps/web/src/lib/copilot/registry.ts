@@ -44,7 +44,13 @@ import {
   type Task,
   overlapsSleep,
   sleepLabel,
+  byOrder,
+  GOAL_CATEGORIES,
+  goalCategory,
+  type Goal,
+  type Milestone,
 } from '@student-os/core';
+import { addMilestone, createGoal, deleteGoal, setGoalStatus, setMilestoneStatus, updateMilestone } from '../goals';
 import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, rescheduleClass } from '../actions';
 import { flashcards as genFlashcards } from '../ai';
 import { db } from '../db';
@@ -359,6 +365,55 @@ function subjectLine(env: Env, name: string | null | undefined, warnings: string
   return s?.id ?? null;
 }
 
+/** A built-in category key from a key or label ("Career", "competitive exams"), else the text as a custom category. */
+function categoryKey(raw: string | null | undefined): string {
+  if (!raw) return 'career';
+  const q = norm(raw);
+  const hit = GOAL_CATEGORIES.find((c) => c.key === q || norm(c.label) === q || norm(c.label).includes(q));
+  return hit ? hit.key : raw.trim().slice(0, 50);
+}
+
+async function liveGoals(): Promise<Goal[]> {
+  return (await db.entity('goal').toArray()).filter((g) => !g.deletedAt);
+}
+
+async function goalMilestones(goalId: string): Promise<Milestone[]> {
+  return byOrder((await db.entity('milestone').where('goalId').equals(goalId).toArray()).filter((m) => !m.deletedAt));
+}
+
+/** Resolve the goal named in params[key] ({ ref? | title? }), asking when several match. */
+async function resolveGoal(params: Record<string, unknown>, key: 'target' | 'goal', action: ActionName): Promise<{ goal: Goal } | Prepared> {
+  const target = (params[key] ?? {}) as { ref?: string | null; title?: string | null };
+  const goals = await liveGoals();
+  if (target.ref) {
+    const hit = goals.find((g) => refOf(REF.goal, g.id) === target.ref);
+    if (hit) return { goal: hit };
+  }
+  const matches = titleMatches(target.title, goals);
+  if (!matches.length) return err(`I couldn't find a goal${target.title ? ` matching "${target.title}"` : ''}.`);
+  if (matches.length > 1) {
+    return {
+      kind: 'clarify',
+      question: 'Which goal do you mean?',
+      options: matches.slice(0, 8).map((g) => ({ label: `${g.icon} ${g.title}`, action, params: { ...params, [key]: { ...target, ref: refOf(REF.goal, g.id) } } })),
+    };
+  }
+  return { goal: matches[0]! };
+}
+
+async function resolveMilestone(params: any): Promise<{ m: Milestone; goal: Goal } | Prepared> {
+  const goals = await liveGoals();
+  const goalById = new Map(goals.map((g) => [g.id, g]));
+  let rows = (await db.entity('milestone').toArray()).filter((m) => !m.deletedAt && goalById.has(m.goalId));
+  if (params.target.goal) {
+    const gs = titleMatches(params.target.goal, goals);
+    if (gs.length) rows = rows.filter((m) => gs.some((g) => g.id === m.goalId));
+  }
+  const r = await resolveByTitle(rows, REF.milestone, params.target, params, 'update_milestone', 'milestone', (m) => `${m.title} (${goalById.get(m.goalId)!.title})`);
+  if (isPrepared(r)) return r;
+  return { m: r.row, goal: goalById.get(r.row.goalId)! };
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 
@@ -458,6 +513,178 @@ const H: Record<ActionName, Handler> = {
     async execute(p) {
       await remove('task', p.resolved.taskId as string);
       return '✓ Task deleted';
+    },
+  },
+
+  create_goal: {
+    async prepare(params: any, env) {
+      const start = params.startDate ?? env.today;
+      if (params.targetDate && params.targetDate < start) return err('The target date is before the start date.');
+      const cat = goalCategory(categoryKey(params.category));
+      const ms = params.milestones as Array<{ title: string; targetDate: string | null }>;
+      const warnings = params.targetDate ? ms.filter((m) => m.targetDate && m.targetDate > params.targetDate).map((m) => `"${m.title}" is dated after the goal's target date.`) : [];
+      return proposal('create_goal', params, {
+        title: 'Create goal',
+        heading: `${cat.icon} ${params.title}`,
+        lines: [
+          `Category: ${cat.label}`,
+          params.targetDate ? `Target: ${dayLabel(params.targetDate, env.today)} (${diffDays(env.today, params.targetDate)} days)` : 'No target date',
+          `Priority: ${params.priority}`,
+          ...ms.map((m, i) => `${i + 1}. ${m.title}${m.targetDate ? ` · ${dayLabel(m.targetDate, env.today)}` : ''}`),
+        ],
+        warnings,
+        editable: [
+          { path: 'title', label: 'Goal', type: 'text' },
+          { path: 'targetDate', label: 'Target date', type: 'date' },
+          { path: 'priority', label: 'Priority', type: 'priority' },
+        ],
+      });
+    },
+    async execute(p, env) {
+      const x = p.params as any;
+      const goal = await createGoal(
+        { title: x.title, category: categoryKey(x.category), priority: x.priority, startDate: x.startDate ?? env.today, targetDate: x.targetDate, description: x.description },
+        x.milestones,
+      );
+      return `✓ Goal created${x.milestones.length ? ` with ${x.milestones.length} milestones` : ''}: ${goal.title}`;
+    },
+  },
+
+  update_goal: {
+    async prepare(params: any) {
+      const r = await resolveGoal(params, 'target', 'update_goal');
+      if (isPrepared(r)) return r;
+      const g = r.goal;
+      const c = params.changes;
+      const lines: string[] = [];
+      const diff = (label: string, a: unknown, b: unknown) => b !== null && b !== undefined && a !== b && lines.push(`${label}: ${a ?? '—'} → ${b}`);
+      diff('Title', g.title, c.title);
+      diff('Target date', g.targetDate, c.targetDate);
+      diff('Start date', g.startDate, c.startDate);
+      diff('Priority', g.priority, c.priority);
+      diff('Category', goalCategory(g.category).label, c.category ? goalCategory(categoryKey(c.category)).label : null);
+      diff('Status', g.status, c.status);
+      if (c.description && c.description !== g.description) lines.push('Description updated');
+      if (!lines.length) return err(`"${g.title}" already looks like that, so there is nothing to change.`);
+      const target = c.targetDate ?? g.targetDate;
+      if (target && target < (c.startDate ?? g.startDate)) return err('The target date would be before the start date.');
+      return proposal('update_goal', params, { title: c.status === 'completed' ? 'Mark goal achieved' : 'Update goal', heading: `${g.icon} ${g.title}`, lines, resolved: { goalId: g.id } });
+    },
+    async execute(p) {
+      const c = (p.params as any).changes;
+      const id = p.resolved.goalId as string;
+      const { status, category, ...rest } = c;
+      const patch: Partial<Goal> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined));
+      if (category) Object.assign(patch, { category: categoryKey(category), color: goalCategory(categoryKey(category)).color });
+      if (Object.keys(patch).length) await update('goal', id, patch);
+      if (status) await setGoalStatus((await db.entity('goal').get(id))!, status);
+      return status === 'completed' ? '✓ Goal marked as achieved' : '✓ Goal updated';
+    },
+  },
+
+  add_milestones: {
+    async prepare(params: any, env) {
+      const r = await resolveGoal(params, 'goal', 'add_milestones');
+      if (isPrepared(r)) return r;
+      const g = r.goal;
+      const ms = params.milestones as Array<{ title: string; targetDate: string | null }>;
+      const warnings = g.targetDate ? ms.filter((m) => m.targetDate && m.targetDate > g.targetDate!).map((m) => `"${m.title}" is dated after the goal's target date.`) : [];
+      return proposal('add_milestones', params, {
+        title: `Add ${ms.length} milestone${ms.length === 1 ? '' : 's'}`,
+        heading: `${g.icon} ${g.title}`,
+        lines: ms.map((m) => `• ${m.title}${m.targetDate ? ` · ${dayLabel(m.targetDate, env.today)}` : ''}`),
+        warnings,
+        resolved: { goalId: g.id },
+      });
+    },
+    async execute(p) {
+      for (const m of (p.params as any).milestones) await addMilestone(p.resolved.goalId as string, { title: m.title, targetDate: m.targetDate });
+      return '✓ Milestones added';
+    },
+  },
+
+  update_milestone: {
+    async prepare(params: any, env) {
+      const r = await resolveMilestone(params);
+      if (isPrepared(r)) return r;
+      const { m, goal } = r;
+      const c = params.changes;
+      const lines: string[] = [];
+      const diff = (label: string, a: unknown, b: unknown) => b !== null && b !== undefined && a !== b && lines.push(`${label}: ${a ?? '—'} → ${b}`);
+      diff('Title', m.title, c.title);
+      diff('Target date', m.targetDate, c.targetDate);
+      diff('Status', m.status, c.status);
+      if (c.notes && c.notes !== m.notes) lines.push('Notes updated');
+      if (!lines.length) return err(`"${m.title}" already looks like that, so there is nothing to change.`);
+      const warnings = c.targetDate && goal.targetDate && c.targetDate > goal.targetDate ? [`That's after the goal's target date (${dayLabel(goal.targetDate, env.today)}).`] : [];
+      return proposal('update_milestone', params, { title: c.status === 'done' ? 'Complete milestone' : 'Update milestone', heading: `${m.title} · ${goal.title}`, lines, warnings, resolved: { milestoneId: m.id } });
+    },
+    async execute(p) {
+      const { status, ...rest } = (p.params as any).changes;
+      const id = p.resolved.milestoneId as string;
+      const patch = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined));
+      if (Object.keys(patch).length) await updateMilestone(id, patch);
+      if (status) await setMilestoneStatus((await db.entity('milestone').get(id))!, status);
+      return status === 'done' ? '✓ Milestone completed' : '✓ Milestone updated';
+    },
+  },
+
+  add_goal_tasks: {
+    async prepare(params: any, env) {
+      const r = await resolveGoal(params, 'goal', 'add_goal_tasks');
+      if (isPrepared(r)) return r;
+      const g = r.goal;
+      const warnings: string[] = [];
+      let milestone: Milestone | null = null;
+      if (params.milestone) {
+        const ms = await goalMilestones(g.id);
+        milestone = ms.find((m) => refOf(REF.milestone, m.id) === params.milestone) ?? titleMatches(params.milestone, ms)[0] ?? null;
+        if (!milestone) warnings.push(`No milestone called "${params.milestone}" in this goal. The tasks go on the goal itself.`);
+      }
+      const tasks = params.tasks as Array<{ title: string; dueDate: string | null; plannedDate: string | null }>;
+      return proposal('add_goal_tasks', params, {
+        title: `Add ${tasks.length} task${tasks.length === 1 ? '' : 's'}`,
+        heading: `${g.icon} ${g.title}${milestone ? ` › ${milestone.title}` : ''}`,
+        lines: tasks.map((t) => `• ${t.title}${t.plannedDate ? ` · planned ${dayWord(t.plannedDate, env.today)}` : t.dueDate ? ` · due ${dayWord(t.dueDate, env.today)}` : ''}`),
+        warnings,
+        resolved: { goalId: g.id, milestoneId: milestone?.id ?? null },
+      });
+    },
+    async execute(p) {
+      const goal = (await db.entity('goal').get(p.resolved.goalId as string))!;
+      const personal = ['personal', 'health'].includes(goal.category);
+      const tasks = (p.params as any).tasks as Array<{ title: string; dueDate: string | null; plannedDate: string | null }>;
+      await createMany(
+        'task',
+        tasks.map((t) => ({
+          title: t.title,
+          dueDate: t.dueDate,
+          plannedDate: t.plannedDate,
+          goalId: goal.id,
+          milestoneId: (p.resolved.milestoneId as string | null) ?? null,
+          category: personal ? 'Personal' : 'Goal',
+          source: 'ai' as const,
+        })),
+      );
+      return '✓ Tasks added to the roadmap';
+    },
+  },
+
+  delete_goal: {
+    async prepare(params: any) {
+      const r = await resolveGoal(params, 'target', 'delete_goal');
+      if (isPrepared(r)) return r;
+      const ms = await goalMilestones(r.goal.id);
+      return proposal('delete_goal', params, {
+        title: 'Delete goal',
+        heading: `${r.goal.icon} ${r.goal.title}`,
+        lines: [`Removes the goal and its ${ms.length} milestone${ms.length === 1 ? '' : 's'} from every device. Its tasks are kept, without the goal.`],
+        resolved: { goalId: r.goal.id },
+      });
+    },
+    async execute(p) {
+      await deleteGoal((await db.entity('goal').get(p.resolved.goalId as string))!, false);
+      return '✓ Goal deleted';
     },
   },
 
@@ -1328,6 +1555,8 @@ const H: Record<ActionName, Handler> = {
       }
       set('revisionIntervals', 'Revision days', c.revisionIntervals ? [...new Set(c.revisionIntervals as number[])].sort((a, b) => a - b) : null, (v) => (v as number[]).join(', '));
       set('theme', 'Theme', c.theme);
+      set('density', 'Layout', c.density);
+      set('reduceMotion', 'Reduce motion', c.reduceMotion, (v) => (v ? 'on' : 'off'));
       if (c.sleepStart || c.sleepEnd) set('sleepWindow', 'Sleep time', { start: c.sleepStart ?? s.sleepWindow.start, end: c.sleepEnd ?? s.sleepWindow.end }, (v) => `${(v as Settings['sleepWindow']).start}–${(v as Settings['sleepWindow']).end}`);
       if (c.classReminderMinutes) {
         const cats = s.notifications.categories;
@@ -1351,7 +1580,7 @@ const H: Record<ActionName, Handler> = {
       if (c.weekStartsOn) set('weekStartsOn', 'Week starts on', c.weekStartsOn === 'sunday' ? 0 : 1, (v) => (v === 0 ? 'Sunday' : 'Monday'));
       if (c.accent) {
         const accent = String(c.accent).toLowerCase();
-        if (!ACCENT_NAMES.includes(accent)) return err(`I can't use "${c.accent}" as the accent colour. Choose one of: ${ACCENT_NAMES.join(', ')}.`);
+        if (!ACCENT_NAMES.includes(accent) && !/^#[0-9a-f]{6}$/.test(accent)) return err(`I can't use "${c.accent}" as the accent colour. Choose one of: ${ACCENT_NAMES.join(', ')}.`);
         set('accent', 'Accent colour', accent);
       }
 

@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { isISODate, normalizeTime } from './dates';
 import { AI_PROTECTED_SETTINGS, APP_PAGES, HOME_SECTIONS, type AIArea, type AIPermission, type AIPermissions, type NotificationCategory } from './entities';
 
-const NOTIFICATION_CATEGORIES = ['classes', 'attendance', 'revision', 'tasks', 'assignments', 'exams', 'studySessions', 'dailyReview', 'weeklyReview', 'attendanceRisk', 'reminders', 'aiSuggestions', 'sync'] as const satisfies readonly NotificationCategory[];
+const NOTIFICATION_CATEGORIES = ['classes', 'attendance', 'revision', 'tasks', 'assignments', 'exams', 'goals', 'studySessions', 'dailyReview', 'weeklyReview', 'attendanceRisk', 'reminders', 'aiSuggestions', 'sync'] as const satisfies readonly NotificationCategory[];
 /** update_settings keys that need the notifications permission rather than the settings one. */
 const NOTIFICATION_SETTING_KEYS = ['classReminderMinutes', 'notificationCategories'];
 
@@ -49,6 +49,10 @@ export const eventTarget = z.object({ ref, title: optStr(), date: optDate });
 export const revisionTarget = z.object({ ref, topic: optStr(), date: optDate });
 export const examTarget = z.object({ ref, title: optStr(), subject: optStr() });
 export const assignmentTarget = z.object({ ref, title: optStr() });
+export const goalTarget = z.object({ ref, title: optStr() });
+export const milestoneTarget = z.object({ ref, title: optStr(), goal: optStr() });
+const milestoneInput = z.object({ title: z.string().trim().min(1).max(200), targetDate: optDate });
+const goalTaskInput = z.object({ title: z.string().trim().min(1).max(300), dueDate: optDate, plannedDate: optDate });
 export type ClassTarget = z.infer<typeof classTarget>;
 
 const eventInput = z.object({
@@ -141,6 +145,88 @@ export const ACTIONS = {
     description: 'Delete a task.',
     params: '{ target: { ref? | title? } }',
     schema: z.object({ target: taskTarget }),
+    kind: 'delete',
+    permissions: ['deleteTasks'],
+  }),
+  create_goal: define({
+    name: 'create_goal',
+    description:
+      'Create a long-term goal (career, exam, academic, skill, project, personal, health, finance or a custom category), optionally with ordered milestones. Use for multi-week/month ambitions, not single tasks.',
+    params:
+      '{ title, category?: career|exam|academic|skill|project|personal|health|finance|<custom>, startDate?: YYYY-MM-DD, targetDate?: YYYY-MM-DD, priority?, description?, milestones?: [ { title, targetDate? } ] }',
+    schema: z.object({
+      title: z.string().trim().min(1).max(200),
+      category: optStr(50),
+      startDate: optDate,
+      targetDate: optDate,
+      priority,
+      description: optStr(5000),
+      milestones: z.array(milestoneInput).max(30).nullish().transform((v) => v ?? []),
+    }),
+    kind: 'create',
+    permissions: ['createTasks'],
+    affects: ['Goals', 'Home', 'Goal reminders'],
+  }),
+  update_goal: define({
+    name: 'update_goal',
+    description: 'Change a goal: rename, reschedule its target date, change priority/category/description, pause, resume (active) or mark it achieved (completed).',
+    params: '{ target: { ref? | title? }, changes: { title?, targetDate?, startDate?, priority?, category?, description?, status?: active|paused|completed } }',
+    schema: z.object({
+      target: goalTarget,
+      changes: z.object({
+        title: optStr(200),
+        targetDate: optDate,
+        startDate: optDate,
+        priority: z.enum(['low', 'medium', 'high', 'urgent']).nullish(),
+        category: optStr(50),
+        description: optStr(5000),
+        status: z.enum(['active', 'paused', 'completed']).nullish(),
+      }),
+    }),
+    kind: 'modify',
+    permissions: ['modifyTasks'],
+    affects: ['Goals', 'Goal reminders'],
+  }),
+  add_milestones: define({
+    name: 'add_milestones',
+    description: "Add milestones to the end of an existing goal's roadmap.",
+    params: '{ goal: { ref? | title? }, milestones: [ { title, targetDate? } ] }',
+    schema: z.object({ goal: goalTarget, milestones: z.array(milestoneInput).min(1).max(30) }),
+    kind: 'create',
+    permissions: ['createTasks'],
+    affects: ['Goal roadmap', 'Goal progress'],
+  }),
+  update_milestone: define({
+    name: 'update_milestone',
+    description: 'Change a milestone: rename, reschedule, or set its status (todo, in_progress, blocked, done).',
+    params: '{ target: { ref? | title?, goal? }, changes: { title?, targetDate?, status?: todo|in_progress|blocked|done, notes? } }',
+    schema: z.object({
+      target: milestoneTarget,
+      changes: z.object({
+        title: optStr(200),
+        targetDate: optDate,
+        status: z.enum(['todo', 'in_progress', 'blocked', 'done']).nullish(),
+        notes: optStr(5000),
+      }),
+    }),
+    kind: 'modify',
+    permissions: ['modifyTasks'],
+    affects: ['Goal roadmap', 'Goal progress'],
+  }),
+  add_goal_tasks: define({
+    name: 'add_goal_tasks',
+    description: "Break a goal (or one of its milestones) into concrete tasks. Tasks with a date also appear in Todos on that day; undated ones wait on the roadmap.",
+    params: '{ goal: { ref? | title? }, milestone?: milestone title or ref, tasks: [ { title, dueDate?, plannedDate? } ] }',
+    schema: z.object({ goal: goalTarget, milestone: optStr(200), tasks: z.array(goalTaskInput).min(1).max(40) }),
+    kind: 'create',
+    permissions: ['createTasks'],
+    affects: ['Goal roadmap', 'Tasks', 'Goal progress'],
+  }),
+  delete_goal: define({
+    name: 'delete_goal',
+    description: 'Delete a goal and its milestones. Its tasks are kept (unlinked).',
+    params: '{ target: { ref? | title? } }',
+    schema: z.object({ target: goalTarget }),
     kind: 'delete',
     permissions: ['deleteTasks'],
   }),
@@ -511,11 +597,11 @@ export const ACTIONS = {
   update_settings: define({
     name: 'update_settings',
     description:
-      'Change app settings and how the app itself works: attendance rule (min/target/safe %), daily study target, semester dates and holidays (both apply to every basket unless a basket sets its own), revision intervals, college hours, week start, theme and accent colour, class reminder minutes, which notification types are on, sleep time (nothing is scheduled during sleep). ' +
+      'Change app settings and how the app itself works: attendance rule (min/target/safe %), daily study target, semester dates and holidays (both apply to every basket unless a basket sets its own), revision intervals, college hours, week start, theme, accent colour (a named one or a custom #rrggbb), compact or comfortable layout, reduce motion, class reminder minutes, which notification types are on, sleep time (nothing is scheduled during sleep). ' +
       'App layout: which home cards show and in what order (homeSections is the full visible list in order; or use showHomeCards/hideHomeCards), what the home "Up next" card swipes through besides classes (timed tasks due today, events, reminders), the page the app opens on, and pages hidden from the menu. ' +
       `Home cards: ${HOME_SECTIONS.join(', ')}. Pages: ${APP_PAGES.join(', ')}. Notification types: ${NOTIFICATION_CATEGORIES.join(', ')}.`,
     params:
-      '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, addHolidays?: YYYY-MM-DD[], removeHolidays?: YYYY-MM-DD[], revisionIntervals?: number[], collegeStart?: HH:MM, collegeEnd?: HH:MM, weekStartsOn?: sunday|monday, theme?: system|light|dark, accent?: indigo|blue|teal|rose|amber|violet, classReminderMinutes?: number[], notificationCategories?: { <type>: boolean }, sleepStart?: HH:MM, sleepEnd?: HH:MM, ' +
+      '{ changes: { minAttendance?, targetAttendance?, safeAttendance?, dailyStudyTargetMinutes?, semesterStart?, semesterEnd?, addHolidays?: YYYY-MM-DD[], removeHolidays?: YYYY-MM-DD[], revisionIntervals?: number[], collegeStart?: HH:MM, collegeEnd?: HH:MM, weekStartsOn?: sunday|monday, theme?: system|light|dark, accent?: indigo|blue|cyan|teal|emerald|amber|orange|rose|pink|violet|slate|#rrggbb, density?: comfortable|compact, reduceMotion?: boolean, classReminderMinutes?: number[], notificationCategories?: { <type>: boolean }, sleepStart?: HH:MM, sleepEnd?: HH:MM, ' +
       'homeSections?: card[], showHomeCards?: card[], hideHomeCards?: card[], upNextTasks?: boolean, upNextEvents?: boolean, upNextReminders?: boolean, startPage?: page, hidePages?: page[], showPages?: page[] } }',
     schema: z.object({
       changes: z.object({
@@ -529,6 +615,8 @@ export const ACTIONS = {
         removeHolidays: z.array(date).max(366).nullish(),
         revisionIntervals: z.array(z.number().int().min(1).max(3650)).min(1).max(20).nullish(),
         theme: z.enum(['system', 'light', 'dark']).nullish(),
+        density: z.enum(['comfortable', 'compact']).nullish(),
+        reduceMotion: z.boolean().nullish(),
         classReminderMinutes: z.array(z.number().int().min(0).max(1440)).max(8).nullish(),
         sleepStart: optTime,
         sleepEnd: optTime,
@@ -639,6 +727,12 @@ export const ACTION_AREA: Record<ActionName, AIArea | null> = {
   update_task: 'tasks',
   complete_task: 'tasks',
   delete_task: 'tasks',
+  create_goal: 'tasks',
+  update_goal: 'tasks',
+  add_milestones: 'tasks',
+  update_milestone: 'tasks',
+  add_goal_tasks: 'tasks',
+  delete_goal: 'tasks',
   create_class: 'schedule',
   cancel_class: 'schedule',
   reschedule_class: 'schedule',

@@ -18,6 +18,7 @@ const KIND: Record<NotificationCategory, { mode: 'before' | 'after' | 'time' | '
   tasks: { mode: 'before', presets: [0, 15, 60, 180, 1440], hint: 'Before a task deadline (tasks without a time use the default time)' },
   assignments: { mode: 'before', presets: [60, 1440, 3 * 1440, 7 * 1440], hint: 'Before an assignment deadline' },
   exams: { mode: 'before', presets: [60, 1440, 7 * 1440, 14 * 1440, 30 * 1440], hint: 'Before an exam' },
+  goals: { mode: 'before', presets: [0, 1440, 3 * 1440, 7 * 1440, 14 * 1440], hint: 'Before a milestone or goal target date, at the default time' },
   studySessions: { mode: 'before', presets: [0, 5, 10, 15, 30], hint: 'Before a scheduled study session' },
   dailyReview: { mode: 'time', hint: 'Evening review prompt' },
   weeklyReview: { mode: 'weekly', hint: 'Weekly summary' },

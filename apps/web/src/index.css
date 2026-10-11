@@ -8,8 +8,9 @@
 @theme {
   --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05);
-  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.08);
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 2px 6px -2px rgb(16 24 40 / 0.06);
+  --shadow-lift: 0 2px 4px rgb(16 24 40 / 0.04), 0 10px 24px -8px rgb(16 24 40 / 0.14);
+  --shadow-pop: 0 16px 40px -12px rgb(16 24 40 / 0.22), 0 4px 10px -4px rgb(16 24 40 / 0.08);
 
   --animate-rise: rise 0.22s ease-out both;
   @keyframes rise {
@@ -68,13 +69,13 @@
 
 :root {
   color-scheme: light;
-  --page: #f5f6f8;
+  --page: #f4f5f8;
   --surface: #ffffff;
-  --surface-2: #f1f2f5;
-  --ink: #0f1115;
-  --ink-2: #4a4f5c;
-  --muted: #7c8191;
-  --line: #e6e8ec;
+  --surface-2: #f1f3f7;
+  --ink: #0e1116;
+  --ink-2: #464c5a;
+  --muted: #767c8c;
+  --line: #e3e6ec;
   --accent: #4f46e5;
   --accent-ink: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, white);
@@ -85,9 +86,9 @@
 
 .dark {
   color-scheme: dark;
-  --page: #0b0c0f;
-  --surface: #15171c;
-  --surface-2: #1d2027;
+  --page: #0a0b0e;
+  --surface: #14161b;
+  --surface-2: #1c1f26;
   --ink: #f4f5f7;
   --ink-2: #b4b8c3;
   --muted: #858b99;
@@ -104,6 +105,11 @@ html,
 body {
   background: var(--page);
   color: var(--ink);
+}
+
+body {
+  background-image: radial-gradient(1100px 420px at 50% -220px, color-mix(in srgb, var(--accent) 9%, transparent), transparent);
+  background-repeat: no-repeat;
 }
 
 body {
@@ -218,4 +224,23 @@ body {
   .confetti {
     display: none;
   }
+}
+
+/* Compact layout (Settings → Appearance): Tailwind sizes are in rem, so a smaller root
+   size tightens type and spacing everywhere at once. */
+html.compact {
+  font-size: 14.5px;
+}
+
+/* Reduce motion (Settings → Appearance), on top of the device setting. */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+html.reduce-motion .confetti {
+  display: none;
 }

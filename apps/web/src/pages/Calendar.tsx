@@ -1,6 +1,7 @@
 import { AskAI } from '../components/AskAI';
 import { useMemo, useState } from 'react';
-import { BookOpen, CalendarClock, CheckSquare, ChevronLeft, ChevronRight, FileText, GraduationCap, Repeat, User, Bell, Star } from 'lucide-react';
+import { Link } from 'react-router';
+import { BookOpen, CalendarClock, CheckSquare, ChevronLeft, ChevronRight, FileText, Flag, GraduationCap, Mountain, Repeat, User, Bell, Star } from 'lucide-react';
 import {
   addDays,
   addMonths,
@@ -21,7 +22,7 @@ import { Button, Card, cn, Modal, PageHeader, Tabs } from '../components/ui';
 import { useAll, useOccurrences, useSettings, useSubjectMap } from '../lib/hooks';
 
 type View = 'day' | 'week' | 'month' | 'agenda';
-type Kind = 'class' | 'study' | 'revision' | 'task' | 'exam' | 'assignment' | 'personal' | 'event' | 'reminder';
+type Kind = 'class' | 'study' | 'revision' | 'task' | 'exam' | 'assignment' | 'personal' | 'event' | 'reminder' | 'milestone' | 'goal';
 
 interface CalItem {
   id: string;
@@ -33,6 +34,8 @@ interface CalItem {
   color: string;
   done: boolean;
   occ?: ClassOccurrence;
+  /** Opens the item (milestones and goals open their roadmap). */
+  href?: string;
 }
 
 const KIND_META: Record<Kind, { label: string; Icon: typeof BookOpen }> = {
@@ -45,6 +48,8 @@ const KIND_META: Record<Kind, { label: string; Icon: typeof BookOpen }> = {
   personal: { label: 'Personal', Icon: User },
   event: { label: 'Event', Icon: CalendarClock },
   reminder: { label: 'Reminder', Icon: Bell },
+  milestone: { label: 'Milestone', Icon: Flag },
+  goal: { label: 'Goal target', Icon: Mountain },
 };
 
 function useCalendarItems(from: ISODate, to: ISODate): CalItem[] {
@@ -56,6 +61,8 @@ function useCalendarItems(from: ISODate, to: ISODate): CalItem[] {
   const tasks = useAll('task') ?? [];
   const exams = useAll('exam') ?? [];
   const assignments = useAll('assignment') ?? [];
+  const goals = useAll('goal') ?? [];
+  const milestones = useAll('milestone') ?? [];
 
   return useMemo(() => {
     const color = (id: string | null) => (id ? (subjects.get(id)?.color ?? '#888') : 'var(--muted)');
@@ -98,11 +105,35 @@ function useCalendarItems(from: ISODate, to: ISODate): CalItem[] {
       if (!inRange(a.deadline)) continue;
       items.push({ id: a.id, date: a.deadline, start: null, end: null, title: `Due: ${a.title}`, kind: 'assignment', color: color(a.subjectId), done: a.status === 'submitted' });
     }
+    // Long-term goals: open milestones on their target date, finished ones on the day they were done.
+    const goalById = new Map(goals.filter((g) => g.status !== 'paused').map((g) => [g.id, g]));
+    for (const m of milestones) {
+      const g = goalById.get(m.goalId);
+      if (!g) continue;
+      const date = m.status === 'done' ? (m.completedAt?.slice(0, 10) ?? m.targetDate) : m.targetDate;
+      if (!inRange(date)) continue;
+      items.push({ id: m.id, date: date!, start: null, end: null, title: `${m.title} · ${g.title}`, kind: 'milestone', color: g.color, done: m.status === 'done', href: `/goals/${g.id}?m=${m.id}` });
+    }
+    for (const g of goalById.values()) {
+      if (g.status !== 'active' || !inRange(g.targetDate)) continue;
+      items.push({ id: `goal-${g.id}`, date: g.targetDate!, start: null, end: null, title: `${g.icon} ${g.title}`, kind: 'goal', color: g.color, done: false, href: `/goals/${g.id}` });
+    }
     return items.sort((a, b) => a.date.localeCompare(b.date) || (a.start ? timeToMinutes(a.start) : 9999) - (b.start ? timeToMinutes(b.start) : 9999));
-  }, [classes, events, revisions, topics, tasks, exams, assignments, subjects, from, to]);
+  }, [classes, events, revisions, topics, tasks, exams, assignments, goals, milestones, subjects, from, to]);
 }
 
 function ItemChip({ item, compact }: { item: CalItem; compact?: boolean }) {
+  const chip = <Chip item={item} compact={compact} />;
+  return item.href && !compact ? (
+    <Link to={item.href} className="block rounded-md hover:opacity-80">
+      {chip}
+    </Link>
+  ) : (
+    chip
+  );
+}
+
+function Chip({ item, compact }: { item: CalItem; compact?: boolean }) {
   const { Icon, label } = KIND_META[item.kind];
   return (
     <div
@@ -205,7 +236,7 @@ export default function CalendarPage() {
       </div>
 
       <div className="flex flex-wrap gap-3 text-xs text-ink-2">
-        {(['class', 'study', 'revision', 'task', 'exam', 'assignment'] as Kind[]).map((k) => {
+        {(['class', 'study', 'revision', 'task', 'exam', 'assignment', 'milestone'] as Kind[]).map((k) => {
           const { Icon, label } = KIND_META[k];
           return (
             <span key={k} className="flex items-center gap-1">
@@ -232,7 +263,7 @@ export default function CalendarPage() {
                   setView('day');
                 }}
                 className={cn(
-                  'min-h-24 rounded-lg border border-line bg-surface p-1 text-left align-top hover:bg-surface-2',
+                  'flex min-h-24 min-w-0 flex-col justify-start rounded-lg border border-line bg-surface p-1 text-left hover:bg-surface-2',
                   !d.startsWith(cursor.slice(0, 7)) && 'opacity-40',
                   d === today && 'border-accent',
                 )}

@@ -166,6 +166,59 @@ describe('subjects and settings', () => {
     expect((await db.entity('subject').get(cn.id))!.deletedAt).toBeNull();
   });
 
+  it('creates a goal with milestones, breaks it into tasks, completes a milestone, and undoes', async () => {
+    const parse = (name: string, params: Record<string, unknown>) => {
+      const { intents, rejected } = validateIntents([{ action: name, params }]);
+      expect(rejected).toEqual([]);
+      return intents[0]!.params as Record<string, unknown>;
+    };
+    const add = await prepareAction(
+      'create_goal',
+      parse('create_goal', { title: 'Crack GATE', category: 'competitive exams', targetDate: '2027-02-01', milestones: [{ title: 'Finish syllabus', targetDate: '2026-12-01' }, { title: 'Mock tests', targetDate: '2027-03-01' }] }),
+    );
+    expect(add.kind).toBe('proposal');
+    if (add.kind !== 'proposal') return;
+    expect(add.proposal.lines.slice(0, 1)).toEqual(['Category: Competitive exams']);
+    expect(add.proposal.warnings).toEqual([`"Mock tests" is dated after the goal's target date.`]);
+    await confirmProposal(add.proposal);
+    const goal = (await db.entity('goal').toArray()).find((g) => g.title === 'Crack GATE')!;
+    expect(goal).toMatchObject({ category: 'exam', targetDate: '2027-02-01', startDate: '2026-10-02', status: 'active' });
+    const ms = (await db.entity('milestone').toArray()).filter((m) => m.goalId === goal.id).sort((a, b) => a.order - b.order);
+    expect(ms.map((m) => m.title)).toEqual(['Finish syllabus', 'Mock tests']);
+
+    const tasks = await prepareAction('add_goal_tasks', parse('add_goal_tasks', { goal: { title: 'gate' }, milestone: 'syllabus', tasks: [{ title: 'Revise DBMS for GATE', plannedDate: '2026-10-03' }, { title: 'Solve 2019 paper' }] }));
+    expect(tasks).toMatchObject({ kind: 'proposal', proposal: { heading: '📝 Crack GATE › Finish syllabus' } });
+    if (tasks.kind === 'proposal') await confirmProposal(tasks.proposal);
+    const linked = (await db.entity('task').toArray()).filter((t) => t.goalId === goal.id).sort((a, b) => a.title.localeCompare(b.title));
+    expect(linked.map((t) => [t.title, t.milestoneId, t.plannedDate])).toEqual([
+      ['Revise DBMS for GATE', ms[0]!.id, '2026-10-03'],
+      ['Solve 2019 paper', ms[0]!.id, null],
+    ]);
+
+    const done = await prepareAction('update_milestone', parse('update_milestone', { target: { ref: refOf('l', ms[0]!.id) }, changes: { status: 'done' } }));
+    expect(done).toMatchObject({ kind: 'proposal', proposal: { title: 'Complete milestone', lines: ['Status: todo → done'] } });
+    if (done.kind !== 'proposal') return;
+    const log = await confirmProposal(done.proposal);
+    expect((await db.entity('milestone').get(ms[0]!.id))!).toMatchObject({ status: 'done' });
+    expect((await db.entity('milestone').get(ms[0]!.id))!.completedAt).not.toBeNull();
+    await undoLog(log.logId!);
+    expect((await db.entity('milestone').get(ms[0]!.id))!).toMatchObject({ status: 'todo', completedAt: null });
+
+    const resched = await prepareAction('update_goal', parse('update_goal', { target: { title: 'Crack GATE' }, changes: { targetDate: '2027-03-15', status: 'paused' } }));
+    expect(resched).toMatchObject({ kind: 'proposal', proposal: { lines: ['Target date: 2027-02-01 → 2027-03-15', 'Status: active → paused'] } });
+    if (resched.kind === 'proposal') await confirmProposal(resched.proposal);
+    expect((await db.entity('goal').get(goal.id))!).toMatchObject({ targetDate: '2027-03-15', status: 'paused' });
+
+    const del = await prepareAction('delete_goal', parse('delete_goal', { target: { title: 'Crack GATE' } }));
+    expect(del.kind).toBe('proposal');
+    if (del.kind === 'proposal') await confirmProposal(del.proposal);
+    expect((await db.entity('goal').get(goal.id))!.deletedAt).not.toBeNull();
+    // Tasks survive, unlinked.
+    expect((await db.entity('task').get(linked[0]!.id))!).toMatchObject({ deletedAt: null, goalId: null, milestoneId: null });
+    // Leave no tasks behind for later tests.
+    await db.entity('task').clear();
+  });
+
   it('changes a weekly class from today on, keeping history', async () => {
     const r = await prepareAction('update_weekly_class', { target: { ref: null, subject: 'DBMS', weekday: 5, time: '14:00' }, changes: { weekday: null, startTime: '15:00', endTime: null, room: 'Lab 2' } });
     expect(r.kind).toBe('proposal');

@@ -356,6 +356,8 @@ export const notificationSettingsSchema = z.object({
       tasks: category(true, { offsets: [60], time: '18:00' }),
       assignments: category(true, { offsets: [7 * 1440, 3 * 1440, 1440, 60], time: '23:59' }),
       exams: category(true, { offsets: [30 * 1440, 14 * 1440, 7 * 1440, 1440, 60], time: '09:00' }),
+      /** Milestone and goal target dates (all-day, so reminders go at `time`). */
+      goals: category(true, { offsets: [7 * 1440, 1440, 0], time: '09:00' }),
       studySessions: category(true, { offsets: [0] }),
       dailyReview: category(true, { time: '21:30' }),
       weeklyReview: category(true, { time: '19:00', weekday: 0 }),
@@ -548,7 +550,12 @@ export const settingsSchema = syncMeta.extend({
   aiPower: z.enum(['low', 'balanced', 'high', 'maximum']).default('balanced'),
   weekStartsOn: z.union([z.literal(0), z.literal(1)]).default(1),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
+  /** A named accent (indigo, teal, …) or a custom #rrggbb colour. */
   accent: z.string().max(20).default('indigo'),
+  /** 'compact' fits more on screen (slightly smaller type and spacing). */
+  density: z.enum(['comfortable', 'compact']).default('comfortable'),
+  /** Turn off animations in the app, on top of the device's own reduced-motion setting. */
+  reduceMotion: z.boolean().default(false),
   /** IANA timezone, used by the server to send push reminders at the right wall-clock time. */
   timezone: z.string().max(64).default('UTC'),
   notifications: notificationSettingsSchema.prefault({}),
