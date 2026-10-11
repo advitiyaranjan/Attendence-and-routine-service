@@ -674,25 +674,3 @@ export function ScheduleForm({ initial, onDone }: { initial?: ClassSchedule; onD
   );
 }
 
-export function NoteForm({ onDone }: { onDone: (id: string) => void }) {
-  const [title, setTitle] = useState('');
-  const [subjectId, setSubjectId] = useState<string | null>(null);
-  return (
-    <FormShell
-      submitLabel="Create note"
-      onCancel={() => onDone('')}
-      disabled={!title.trim()}
-      onSubmit={async () => {
-        const note = await create('note', { title: title.trim(), subjectId, body: '' });
-        onDone(note.id);
-      }}
-    >
-      <Field label="Title">
-        <Input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
-      <Field label="Subject">
-        <SubjectSelect value={subjectId} onChange={setSubjectId} />
-      </Field>
-    </FormShell>
-  );
-}

@@ -76,18 +76,18 @@ function FileChip({ file, onOpen, onRemove, url }: { file: NoteFile; onOpen: () 
 }
 
 /** Every file attached to the note, shown under the editor. */
-export function NoteFileStrip({ files, onRemove }: { files: NoteFile[]; onRemove: (f: NoteFile) => void }) {
+export function NoteFileStrip({ files, onRemove }: { files: NoteFile[]; onRemove?: (f: NoteFile) => void }) {
   if (!files.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5" aria-label="Attachments">
       {files.map((f) => (
-        <StripItem key={f.id} file={f} onRemove={() => onRemove(f)} />
+        <StripItem key={f.id} file={f} onRemove={onRemove && (() => onRemove(f))} />
       ))}
     </div>
   );
 }
 
-function StripItem({ file, onRemove }: { file: NoteFile; onRemove: () => void }) {
+function StripItem({ file, onRemove }: { file: NoteFile; onRemove?: () => void }) {
   const { url } = useNoteFile(file.id);
   const [open, setOpen] = useState(false);
   return (

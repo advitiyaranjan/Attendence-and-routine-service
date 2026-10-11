@@ -52,7 +52,8 @@ import { CelebrationLayer } from './goals/visuals';
 import { NewGoalForm } from './goals/GoalForms';
 import { useApp } from '../lib/store';
 import { syncNow } from '../lib/sync';
-import { AssignmentForm, EventForm, ExamForm, ExtraClassForm, NoteForm, ScheduleForm, StudyLogForm, TaskForm, TopicForm } from './forms';
+import { AssignmentForm, EventForm, ExamForm, ExtraClassForm, ScheduleForm, StudyLogForm, TaskForm, TopicForm } from './forms';
+import { NoteForm } from './NoteComposer';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppLogo, cn, isOverlayEntry, Modal } from './ui';
 
@@ -457,7 +458,7 @@ function QuickAdd() {
         </div>
       </Modal>
 
-      <Modal open={!!quickAdd} onClose={close} title={quickAdd ? (QUICK_TITLES[quickAdd] ?? 'Add') : ''}>
+      <Modal open={!!quickAdd} onClose={close} title={quickAdd ? (QUICK_TITLES[quickAdd] ?? 'Add') : ''} wide={quickAdd === 'note'}>
         {quickAdd === 'task' && <TaskForm onDone={close} />}
         {quickAdd === 'goal' && (
           <NewGoalForm
