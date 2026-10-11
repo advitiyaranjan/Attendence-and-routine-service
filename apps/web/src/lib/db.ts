@@ -44,12 +44,27 @@ export interface AppNotification {
   reported?: boolean;
 }
 
+/**
+ * A picture or PDF attached to a note. Kept on this device only (files are too
+ * large for the sync batches); the note body links to it as notefile:<id>.
+ */
+export interface NoteFile {
+  id: string;
+  noteId: string;
+  name: string;
+  type: string;
+  size: number;
+  blob: Blob;
+  createdAt: string;
+}
+
 type EntityTables = { [K in EntityName]: Table<EntityMap[K], string> };
 
 class StudentDB extends Dexie {
   outbox!: Table<OutboxItem, number>;
   kv!: Table<KV, string>;
   notifications!: Table<AppNotification, string>;
+  noteFiles!: Table<NoteFile, string>;
 
   constructor() {
     super('student-os');
@@ -89,6 +104,9 @@ class StudentDB extends Dexie {
       goal: 'id, status',
       milestone: 'id, goalId',
       task: 'id, status, dueDate, plannedDate, goalId, milestoneId',
+    });
+    this.version(5).stores({
+      noteFiles: 'id, noteId',
     });
   }
 

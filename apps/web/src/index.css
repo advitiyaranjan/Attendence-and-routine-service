@@ -184,39 +184,162 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Markdown (AI replies, notes, summaries). Tailwind's reset strips list bullets,
+   heading sizes and spacing, so they are restored here. */
+.prose-sm {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.prose-sm > :first-child {
+  margin-top: 0;
+}
+.prose-sm > :last-child {
+  margin-bottom: 0;
+}
 .prose-sm p {
-  margin: 0.4em 0;
+  margin: 0.5em 0;
+}
+.prose-sm strong {
+  font-weight: 650;
+  color: var(--ink);
+}
+.prose-sm em {
+  font-style: italic;
+}
+.prose-sm del {
+  color: var(--muted);
 }
 .prose-sm ul,
 .prose-sm ol {
-  margin: 0.4em 0;
-  padding-left: 1.25em;
+  margin: 0.5em 0;
+  padding-left: 1.4em;
 }
 .prose-sm ul {
   list-style: disc;
 }
+.prose-sm ul ul {
+  list-style: circle;
+}
 .prose-sm ol {
   list-style: decimal;
 }
+.prose-sm li {
+  margin: 0.2em 0;
+}
+.prose-sm li > p {
+  margin: 0.15em 0;
+}
+.prose-sm li::marker {
+  color: var(--muted);
+}
+.prose-sm ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.prose-sm .task-list-item input {
+  margin-right: 0.45em;
+  vertical-align: -1px;
+  accent-color: var(--accent);
+}
 .prose-sm h1,
 .prose-sm h2,
+.prose-sm h3,
+.prose-sm h4,
+.prose-sm h5,
+.prose-sm h6 {
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0.9em 0 0.35em;
+}
+.prose-sm h1 {
+  font-size: 1.3em;
+}
+.prose-sm h2 {
+  font-size: 1.15em;
+}
 .prose-sm h3 {
-  font-weight: 600;
-  margin: 0.6em 0 0.3em;
+  font-size: 1.05em;
+}
+.prose-sm h4,
+.prose-sm h5,
+.prose-sm h6 {
+  font-size: 1em;
+}
+.prose-sm a {
+  color: var(--accent);
+  font-weight: 500;
+}
+.prose-sm a:hover {
+  text-decoration: underline;
+}
+.prose-sm blockquote {
+  margin: 0.6em 0;
+  padding: 0.1em 0 0.1em 0.8em;
+  border-left: 3px solid var(--line);
+  color: var(--ink-2);
+}
+.prose-sm hr {
+  margin: 0.9em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 .prose-sm code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
   background: var(--surface-2);
-  padding: 0 0.25em;
+  padding: 0.1em 0.3em;
   border-radius: 4px;
+}
+.prose-sm pre {
+  margin: 0.6em 0;
+  padding: 0.7em 0.85em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-x: auto;
+  line-height: 1.45;
+}
+.prose-sm pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.prose-sm .md-table {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 .prose-sm table {
   border-collapse: collapse;
-  margin: 0.5em 0;
+  width: 100%;
+  font-size: 0.95em;
 }
 .prose-sm th,
 .prose-sm td {
-  border: 1px solid var(--line);
-  padding: 0.2em 0.5em;
+  padding: 0.35em 0.65em;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: normal;
+}
+.prose-sm th {
+  font-weight: 600;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.prose-sm tr:last-child td {
+  border-bottom: 0;
+}
+.prose-sm td + td,
+.prose-sm th + th {
+  border-left: 1px solid var(--line);
+}
+.prose-sm img {
+  max-width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

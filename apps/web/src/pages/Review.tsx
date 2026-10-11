@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../components/Markdown';
 import { Sparkles } from 'lucide-react';
 import { addDays, eachDay, fmtPct, formatMinutes, timeToMinutes, type DailyReview } from '@student-os/core';
 import { Button, Card, Field, PageHeader, SectionTitle, Stat, Tabs, Textarea } from '../components/ui';
@@ -95,7 +95,7 @@ function AISummary({ period, data, onSummary, initial }: { period: 'daily' | 'we
       </SectionTitle>
       {summary ? (
         <div className="prose-sm text-sm">
-          <ReactMarkdown>{summary}</ReactMarkdown>
+          <Markdown>{summary}</Markdown>
           {extra.length > 0 && (
             <ul>
               {extra.map((s, i) => (

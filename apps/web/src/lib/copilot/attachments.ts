@@ -28,7 +28,7 @@ export function isSupported(file: File): boolean {
   return file.type.startsWith('image/') || file.type === 'application/pdf' || DOC_EXT.test(file.name);
 }
 
-function loadImage(file: File): Promise<HTMLImageElement> {
+export function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -44,7 +44,7 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-function draw(img: HTMLImageElement, max: number): HTMLCanvasElement {
+export function draw(img: HTMLImageElement, max: number): HTMLCanvasElement {
   const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));

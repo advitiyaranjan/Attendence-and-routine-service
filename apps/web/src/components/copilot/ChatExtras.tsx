@@ -1,9 +1,10 @@
 /** Chat helpers: copy a message, and pictures AI Pilot drew (inline, full-screen viewer, download). */
-import { useEffect, useState } from 'react';
-import { Check, Copy, Download, ImageOff, RotateCcw, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { Check, Copy, Download, ImageOff, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useCopilot, type CopilotMessage } from '../../lib/copilot/store';
 import { toast } from '../../lib/store';
-import { cn } from '../ui';
+import { cn, useBackToClose } from '../ui';
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -44,33 +45,185 @@ export function CopyButton({ text, className }: { text: string; className?: stri
   );
 }
 
-/** Full-screen view of one picture, with download. Escape or tapping outside closes it. */
-export function ImageViewer({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 6;
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
+interface View {
+  scale: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * Pinch, wheel, double-tap and drag zoom for one image. The page itself can't
+ * be pinch-zoomed in the app, so the viewer does it. Offsets are in screen
+ * pixels from the centred position.
+ */
+function useZoom() {
+  const [view, setView] = useState<View>({ scale: 1, x: 0, y: 0 });
+  /** Animate button and double-tap zooms; follow fingers and the wheel directly. */
+  const [smooth, setSmooth] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const stage = useRef<HTMLDivElement>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ dist: number; scale: number; mid: { x: number; y: number }; view: View } | null>(null);
+  const lastTap = useRef(0);
+  const moved = useRef(false);
+
+  /** Zoom to `scale` keeping the screen point (cx, cy) fixed under the finger/cursor. */
+  const zoomAt = useCallback((scale: number, cx: number, cy: number, from: View = viewRef.current) => {
+    const el = stage.current;
+    const next = clampZoom(scale);
+    if (!el || next === 1) return setView({ scale: 1, x: 0, y: 0 });
+    const r = el.getBoundingClientRect();
+    const px = cx - (r.left + r.width / 2);
+    const py = cy - (r.top + r.height / 2);
+    const k = next / from.scale;
+    setView({ scale: next, x: px - (px - from.x) * k, y: py - (py - from.y) * k });
+  }, []);
+
+  // Wheel needs a non-passive listener to stop the page scrolling.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const el = stage.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setSmooth(false);
+      zoomAt(viewRef.current.scale * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
+
+  const handlers = {
+    onPointerDown: (e: PointerEvent) => {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      moved.current = false;
+      const pts = [...pointers.current.values()];
+      if (pts.length === 2) {
+        const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
+        gesture.current = { dist: Math.hypot(a.x - b.x, a.y - b.y), scale: viewRef.current.scale, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, view: viewRef.current };
+      } else {
+        gesture.current = { dist: 0, scale: viewRef.current.scale, mid: { x: e.clientX, y: e.clientY }, view: viewRef.current };
+      }
+    },
+    onPointerMove: (e: PointerEvent) => {
+      if (!pointers.current.has(e.pointerId) || !gesture.current) return;
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pts = [...pointers.current.values()];
+      const g = gesture.current;
+      setSmooth(false);
+      if (pts.length >= 2) {
+        const [a, b] = pts as [{ x: number; y: number }, { x: number; y: number }];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        moved.current = true;
+        const el = stage.current!;
+        const r = el.getBoundingClientRect();
+        const next = clampZoom((g.scale * dist) / (g.dist || dist));
+        const px = g.mid.x - (r.left + r.width / 2);
+        const py = g.mid.y - (r.top + r.height / 2);
+        const k = next / g.view.scale;
+        setView(next === 1 ? { scale: 1, x: 0, y: 0 } : { scale: next, x: px - (px - g.view.x) * k + (mid.x - g.mid.x), y: py - (py - g.view.y) * k + (mid.y - g.mid.y) });
+      } else if (g.view.scale > 1) {
+        const dx = e.clientX - g.mid.x;
+        const dy = e.clientY - g.mid.y;
+        if (Math.abs(dx) + Math.abs(dy) > 3) moved.current = true;
+        setView({ ...g.view, x: g.view.x + dx, y: g.view.y + dy });
+      } else if (Math.abs(e.clientX - g.mid.x) + Math.abs(e.clientY - g.mid.y) > 6) {
+        moved.current = true;
+      }
+    },
+    onPointerUp: (e: PointerEvent) => {
+      pointers.current.delete(e.pointerId);
+      const rest = [...pointers.current.values()];
+      // One finger left after a pinch: continue as a pan from here.
+      gesture.current = rest.length === 1 ? { dist: 0, scale: viewRef.current.scale, mid: rest[0]!, view: viewRef.current } : null;
+      if (rest.length || moved.current) return;
+      const now = Date.now();
+      if (now - lastTap.current < 300) {
+        lastTap.current = 0;
+        setSmooth(true);
+        zoomAt(viewRef.current.scale > 1 ? 1 : 2.5, e.clientX, e.clientY);
+      } else lastTap.current = now;
+    },
+    onPointerCancel: (e: PointerEvent) => {
+      pointers.current.delete(e.pointerId);
+      gesture.current = null;
+    },
+  };
+
+  const step = (factor: number) => {
+    const r = stage.current?.getBoundingClientRect();
+    setSmooth(true);
+    if (r) zoomAt(viewRef.current.scale * factor, r.left + r.width / 2, r.top + r.height / 2);
+  };
+  const reset = () => {
+    setSmooth(true);
+    setView({ scale: 1, x: 0, y: 0 });
+  };
+  return { view, smooth, stage, handlers, zoomIn: () => step(1.5), zoomOut: () => step(1 / 1.5), reset };
+}
+
+const toolbarBtn = 'inline-flex size-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25 disabled:opacity-40';
+
+/**
+ * Full-screen view of one picture: pinch, scroll or double-tap to zoom, drag to
+ * move, download. Escape, Back or the close button closes it.
+ */
+export function ImageViewer({ src, alt, onClose, fileName }: { src: string; alt: string; onClose: () => void; fileName?: string }) {
+  const { view, smooth, stage, handlers, zoomIn, zoomOut, reset } = useZoom();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === '+' || e.key === '=') zoomIn();
+      else if (e.key === '-') zoomOut();
+      else if (e.key === '0') reset();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div role="dialog" aria-modal aria-label={alt || 'Image'} className="fixed inset-0 z-[100] flex flex-col bg-black/90 p-3 sm:p-6" onClick={onClose}>
-      <div className="flex justify-end gap-2">
-        <a
-          href={src}
-          download={`ai-pilot-${Date.now()}.jpg`}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-sm font-medium text-white hover:bg-white/25"
-        >
-          <Download className="size-4" /> Download
+  }, [onClose, zoomIn, zoomOut, reset]);
+  useBackToClose(true, onClose);
+  const zoomed = view.scale > 1;
+  return createPortal(
+    <div role="dialog" aria-modal aria-label={alt || 'Image'} className="fixed inset-0 z-[100] flex select-none flex-col bg-black/90 p-3 sm:p-6" style={{ paddingTop: 'max(0.75rem, var(--sat))', paddingBottom: 'max(0.75rem, var(--sab))' }}>
+      <div className="relative z-10 flex items-center justify-end gap-2">
+        <button type="button" aria-label="Zoom out" title="Zoom out" disabled={!zoomed} onClick={zoomOut} className={toolbarBtn}>
+          <ZoomOut className="size-[18px]" />
+        </button>
+        <button type="button" aria-label="Reset zoom" title="Reset zoom" onClick={reset} className="inline-flex h-9 min-w-14 items-center justify-center rounded-full bg-white/15 px-2.5 text-sm font-medium tabular-nums text-white hover:bg-white/25">
+          {Math.round(view.scale * 100)}%
+        </button>
+        <button type="button" aria-label="Zoom in" title="Zoom in" disabled={view.scale >= MAX_ZOOM} onClick={zoomIn} className={toolbarBtn}>
+          <ZoomIn className="size-[18px]" />
+        </button>
+        <span className="flex-1" />
+        <a href={src} download={fileName ?? `ai-pilot-${Date.now()}.jpg`} className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/15 px-3.5 text-sm font-medium text-white hover:bg-white/25">
+          <Download className="size-4" /> <span className="hidden sm:inline">Download</span>
         </a>
-        <button type="button" aria-label="Close" onClick={onClose} className="inline-flex size-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25">
+        <button type="button" aria-label="Close" onClick={onClose} className={toolbarBtn}>
           <X className="size-5" />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 items-center justify-center py-3">
-        <img src={src} alt={alt} onClick={(e) => e.stopPropagation()} className="max-h-full max-w-full rounded-xl object-contain shadow-pop" />
+      <div
+        ref={stage}
+        {...handlers}
+        className={cn('relative my-3 min-h-0 flex-1 touch-none overflow-hidden', zoomed ? 'cursor-grab active:cursor-grabbing' : 'cursor-zoom-in')}
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className="pointer-events-none absolute inset-0 m-auto max-h-full max-w-full rounded-xl object-contain shadow-pop will-change-transform"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transition: smooth ? 'transform 0.18s ease-out' : undefined }}
+        />
       </div>
-      {alt && <p className="text-center text-sm text-white/80">{alt}</p>}
-    </div>
+      <p className="relative z-10 text-center text-xs text-white/60">{alt ? <span className="mb-0.5 block text-sm text-white/80">{alt}</span> : null}Pinch, scroll or double-tap to zoom</p>
+    </div>,
+    document.body,
   );
 }
 

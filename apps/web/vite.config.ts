@@ -14,7 +14,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: false,
       devOptions: { enabled: true, type: 'module' },
-      injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+      injectManifest: { globPatterns: ['**/*.{js,mjs,css,html,svg,png,woff2}'] },
       manifest: {
         name: 'Student OS',
         short_name: 'Student OS',

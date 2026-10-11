@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
-import ReactMarkdown from 'react-markdown';
 import { AlertTriangle, ArrowLeft, Bot, Loader2, Check, History, Mic, MicOff, FileText, Paperclip, Pencil, Send, ShieldCheck, Sparkles, Trash2, Undo2, WifiOff, X } from 'lucide-react';
 import type { QuizResponse } from '@student-os/core';
 import { quiz as genQuiz, refreshAiStatus } from '../../lib/ai';
@@ -15,6 +14,7 @@ import type { Proposal } from '../../lib/copilot/registry';
 import { inAppHref, linkifySettings } from '../../lib/copilot/links';
 import { QuizRunner } from '../StudyTools';
 import { ChatImage, CopyButton, MessageImages } from './ChatExtras';
+import { Markdown } from '../Markdown';
 import { Button, Checkbox, cn, Input, isOverlayEntry, Select, Textarea, useBackToClose } from '../ui';
 
 function greeting() {
@@ -421,16 +421,14 @@ function AssistantMessage({ m }: { m: CopilotMessage }) {
   return (
     <div className="min-w-0 max-w-[92%] animate-rise space-y-2 rounded-2xl rounded-tl-md border border-line bg-surface px-4 py-3 text-sm shadow-card">
       {m.content && (
-        <div className="prose-sm">
-          <ReactMarkdown
-            components={{
-              a: ({ href, children }) => <ReplyLink href={href}>{children}</ReplyLink>,
-              img: ({ src, alt }) => (typeof src === 'string' && src ? <ChatImage src={src} alt={alt ?? ''} /> : null),
-            }}
-          >
-            {linkifySettings(m.content)}
-          </ReactMarkdown>
-        </div>
+        <Markdown
+          components={{
+            a: ({ href, children }) => <ReplyLink href={href}>{children}</ReplyLink>,
+            img: ({ src, alt }) => (typeof src === 'string' && src ? <ChatImage src={src} alt={alt ?? ''} /> : null),
+          }}
+        >
+          {linkifySettings(m.content)}
+        </Markdown>
       )}
       <MessageImages m={m} />
       {m.notices?.map((n, i) => (

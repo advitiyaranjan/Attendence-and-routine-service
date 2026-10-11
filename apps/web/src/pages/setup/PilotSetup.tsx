@@ -7,7 +7,7 @@
  * saved without the student's confirmation; settings are written on finish.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { Markdown } from '../../components/Markdown';
 import { Bot, Check, Loader2, Paperclip, Send, SlidersHorizontal } from 'lucide-react';
 import { formatMinutes, initialRevisions, todayISO } from '@student-os/core';
 import { blankRow, fromExtraction, parseTimetableCsv, saveTimetableRows, sortRows, TimetableImport, type ReviewRow } from '../../components/TimetableImport';
@@ -657,9 +657,7 @@ function Message({ m }: { m: PilotMessage }) {
   return (
     <Bubble>
       {m.text && (
-        <div className="prose-sm leading-relaxed">
-          <ReactMarkdown>{m.text}</ReactMarkdown>
-        </div>
+        <Markdown>{m.text}</Markdown>
       )}
       {m.checklist && (
         <ul className="mt-2 space-y-1">

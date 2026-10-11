@@ -1,15 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import ReactMarkdown from 'react-markdown';
-import { Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Loader2, Paperclip, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { Note, ReviewSummary } from '@student-os/core';
 import { NoteForm, SubjectSelect } from '../components/forms';
+import { Markdown } from '../components/Markdown';
+import { NoteFileImage, NoteFileLink, NoteFileStrip } from '../components/NoteFiles';
 import { Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, SubjectDot, Tabs, Textarea, cn } from '../components/ui';
 import { flashcards, summarizeNote } from '../lib/ai';
 import { errorMessage } from '../lib/api';
 import { useAll, useSubjectMap } from '../lib/hooks';
 import { createMany, remove, update } from '../lib/repo';
 import { toast, useApp } from '../lib/store';
+import { addNoteFile, deleteNoteFiles, NOTE_FILE_ACCEPT, noteFileId, noteUrlTransform, removeNoteFile, useNoteFiles } from '../lib/note-files';
+import type { Components } from 'react-markdown';
+
+/** Note pictures and PDFs render from this device's storage. */
+const NOTE_COMPONENTS: Components = {
+  img: ({ src, alt }) => {
+    const id = noteFileId(typeof src === 'string' ? src : null);
+    return id ? <NoteFileImage id={id} alt={alt ?? ''} /> : typeof src === 'string' && src ? <img src={src} alt={alt ?? ''} /> : null;
+  },
+  a: ({ href, children }) => {
+    const id = noteFileId(href);
+    return id ? (
+      <NoteFileLink id={id} />
+    ) : (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
+};
 
 export default function Notes() {
   const notes = (useAll('note') ?? []).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -55,7 +76,7 @@ export default function Notes() {
           {open ? (
             <NoteEditor key={open.id} note={open} onClose={() => setParams({})} />
           ) : (
-            <EmptyState title="Select or create a note" body="Notes support Markdown. Link them to a topic so AI flashcards and quizzes can use them." />
+            <EmptyState title="Select or create a note" body="Notes support Markdown, pictures and PDFs. Link them to a topic so AI flashcards and quizzes can use them." />
           )}
         </div>
       </div>
@@ -79,6 +100,39 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const topics = useAll('topic') ?? [];
   const online = useApp((s) => s.online);
+  const files = useNoteFiles(note.id) ?? [];
+  const [attaching, setAttaching] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+
+  /** Save the files and insert them at the cursor (or at the end of the note). */
+  async function attach(list: FileList | File[]) {
+    const incoming = Array.from(list);
+    if (!incoming.length) return;
+    setAttaching(true);
+    const snippets: string[] = [];
+    for (const f of incoming) {
+      try {
+        snippets.push(await addNoteFile(note.id, f));
+      } catch (err) {
+        toast((err as Error).message, 'error');
+      }
+    }
+    setAttaching(false);
+    if (!snippets.length) return;
+    const insert = snippets.join('\n\n');
+    const ta = editor.current;
+    setBody((prev) => {
+      const at = mode === 'write' && ta ? ta.selectionEnd : prev.length;
+      const before = prev.slice(0, at);
+      const after = prev.slice(at);
+      const pre = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+      const post = !after ? '\n' : after.startsWith('\n') ? '\n' : '\n\n';
+      return before + pre + insert + post + after;
+    });
+    toast(snippets.length === 1 ? 'Added to note' : `Added ${snippets.length} files to note`, 'success');
+  }
 
   // Debounced autosave; every save is a local write that syncs in the background.
   useEffect(() => {
@@ -128,6 +182,7 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
           onClick={async () => {
             if (!confirm('Delete this note?')) return;
             await remove('note', note.id);
+            await deleteNoteFiles(note.id);
             onClose();
           }}
         >
@@ -160,7 +215,10 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
             { value: 'preview', label: 'Preview' },
           ]}
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" disabled={attaching} icon={attaching ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />} onClick={() => fileInput.current?.click()} title="Add pictures or PDFs">
+            Attach
+          </Button>
           <Button size="sm" variant="secondary" disabled={!online || !body.trim()} loading={busy === 'summary'} icon={<Sparkles className="size-4" />} onClick={summarize}>
             Summarise
           </Button>
@@ -169,21 +227,74 @@ function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
           </Button>
         </div>
       </div>
-      {mode === 'write' ? (
-        <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-80 font-mono text-[13px]" placeholder="# Heading&#10;- Key point" aria-label="Note body" />
-      ) : (
-        <div className="prose-sm min-h-40 text-sm" onDoubleClick={() => setMode('write')}>
-          {body ? <ReactMarkdown>{body}</ReactMarkdown> : <p className="text-muted">Nothing written yet.</p>}
-        </div>
-      )}
+      <input
+        ref={fileInput}
+        type="file"
+        multiple
+        accept={NOTE_FILE_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files) void attach(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      <div
+        className={cn('rounded-xl transition-shadow', dragging && 'ring-2 ring-accent/50')}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          setDragging(false);
+          if (!e.dataTransfer.files.length) return;
+          e.preventDefault();
+          void attach(e.dataTransfer.files);
+        }}
+      >
+        {mode === 'write' ? (
+          <Textarea
+            ref={editor}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onPaste={(e) => {
+              // Pasted screenshots and copied files become attachments.
+              const pasted = Array.from(e.clipboardData.files);
+              if (pasted.length) {
+                e.preventDefault();
+                void attach(pasted);
+              }
+            }}
+            className="min-h-80 font-mono text-[13px]"
+            placeholder="# Heading&#10;- Key point&#10;&#10;Paste or drop pictures and PDFs here"
+            aria-label="Note body"
+          />
+        ) : (
+          <div className="min-h-40 text-sm" onDoubleClick={() => setMode('write')}>
+            {body ? (
+              <Markdown components={NOTE_COMPONENTS} urlTransform={noteUrlTransform}>
+                {body}
+              </Markdown>
+            ) : (
+              <p className="text-muted">Nothing written yet.</p>
+            )}
+          </div>
+        )}
+      </div>
+      <NoteFileStrip
+        files={files}
+        onRemove={async (f) => {
+          if (!confirm(`Remove "${f.name}" from this note?`)) return;
+          setBody(await removeNoteFile(f.id, body));
+        }}
+      />
       {ai && (
         <div className="rounded-lg bg-surface-2 p-3 text-sm">
           <div className="mb-1 flex items-center gap-1 font-medium">
             <Sparkles className="size-4 text-accent" /> AI summary
           </div>
-          <div className="prose-sm">
-            <ReactMarkdown>{ai.summary}</ReactMarkdown>
-          </div>
+          <Markdown>{ai.summary}</Markdown>
           {ai.highlights.length > 0 && (
             <>
               <div className="mt-2 text-xs font-semibold text-ink-2">Revision points</div>
