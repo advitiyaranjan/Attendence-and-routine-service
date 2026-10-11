@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { AlertTriangle, ArrowRight, CalendarClock, ChartPie, Check, CheckSquare, FilePlus2, Flame, History, ListChecks, MoreHorizontal, Mountain, Repeat, Sparkles, Target, Timer, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CalendarClock, ChartPie, Check, CheckSquare, FilePlus2, Flame, History, ListChecks, MoreHorizontal, Mountain, Repeat, Sparkles, Target, Timer, TrendingDown, TrendingUp, X, type LucideIcon } from 'lucide-react';
 import {
   addDays,
   HOME_SECTIONS,
@@ -21,11 +21,12 @@ import {
   type Subject,
 } from '@student-os/core';
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { AttendancePanel, ScheduleTimeline } from '../components/DashboardPanels';
 import { AskAI } from '../components/AskAI';
 import { ClassRow } from '../components/ClassRow';
 import { completeTarget, FeedbackSheet, notDoneTarget, type FeedbackTarget } from '../components/ItemFeedback';
 import { UpNext, upNextItems } from '../components/UpNext';
-import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
+import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
 import { copiesOf, isRoadmapBacklog, normTitle, scheduledKeys, selfStudyMinutes, taskDay } from '../lib/plan';
@@ -46,13 +47,18 @@ export function Dashboard() {
   const today = useToday();
   const now = useNow();
   const subjects = useSubjectMap();
-  const classes = useOccurrences(today, today) ?? [];
+  const classesData = useOccurrences(today, today);
+  const classes = classesData ?? [];
   const attendance = useAttendance();
-  const tasks = useAll('task') ?? [];
-  const revisions = useAll('revisionSchedule') ?? [];
+  const tasksData = useAll('task');
+  const tasks = tasksData ?? [];
+  const revisionsData = useAll('revisionSchedule');
+  const revisions = revisionsData ?? [];
   const topics = useAll('topic') ?? [];
-  const sessions = useAll('studySession') ?? [];
-  const events = useAll('calendarEvent') ?? [];
+  const sessionsData = useAll('studySession');
+  const sessions = sessionsData ?? [];
+  const eventsData = useAll('calendarEvent');
+  const events = eventsData ?? [];
   const exams = useAll('exam') ?? [];
   const assignments = useAll('assignment') ?? [];
   const [rating, setRating] = useState<RevisionSchedule | null>(null);
@@ -68,6 +74,7 @@ export function Dashboard() {
   const scheduled = scheduledKeys(events, today);
   const todaysEventsAll = events.filter((e) => e.date === today && !e.deletedAt);
   // Tasks due or planned up to today, counted once (a session's task copy is in the schedule).
+  const remainingTasks = tasks.filter((t) => t.status !== 'done' && !isRoadmapBacklog(t) && (!taskDay(t) || taskDay(t)! <= today));
   const openTasks = tasks.filter((t) => t.status !== 'done' && !!taskDay(t) && taskDay(t)! <= today && !scheduled.has(normTitle(t.title)));
   const priorities = rankTasks(
     tasks.filter((t) => {
@@ -115,7 +122,6 @@ export function Dashboard() {
   ];
   const streak = computeStreak(studyDates, today);
 
-  const subjectAttendance = (attendance?.subjects ?? []).filter((s) => s.summary.conducted > 0 || s.summary.risk !== 'no_data');
   const unmarked = (attendance?.unmarked ?? []).filter((o) => o.date < today || timeToMinutes(o.endTime) <= minutesNow);
   const upcomingExams = exams.filter((e) => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
   const dueSoon = assignments.filter((a) => a.status !== 'submitted' && diffDays(today, a.deadline) <= 7).sort((a, b) => a.deadline.localeCompare(b.deadline));
@@ -140,14 +146,18 @@ export function Dashboard() {
   // While the mess serves a meal, the greeting says so (and shows today's menu). Nowhere else.
   const meal = currentMeal(settings.mess, now.getDay(), now.getHours() * 60 + now.getMinutes());
 
+  if ([classesData, tasksData, revisionsData, sessionsData, eventsData].some((data) => data === undefined)) {
+    return <div className="space-y-6" role="status" aria-label="Loading your dashboard"><div className="skeleton h-8 w-48 rounded-lg" /><div className="skeleton h-64 rounded-[22px]" /><div className="grid gap-6 lg:grid-cols-3"><div className="skeleton h-80 rounded-[20px] lg:col-span-2" /><div className="skeleton h-80 rounded-[20px]" /></div><span className="sr-only">Loading your dashboard…</span></div>;
+  }
+
   return (
-    <HomeLayout.Provider value={settings.app.homeSections}>
-    <div className="space-y-5">
+    <HomeLayout.Provider value={homeOrder(settings.app.homeSections)}>
+    <div className="dashboard space-y-6">
+      <div className="dashboard-greeting"><div><p className="eyebrow">Your personal command center</p><p className="mt-1 text-sm text-ink-2">{greeting(now)}{firstName ? `, ${firstName}` : ''}.</p></div><p className="text-xs text-muted">{dateLabel}</p></div>
       <Hero
         greeting={meal ? `Hey${firstName ? ` ${firstName}` : ''}, it's ${meal.meal.name.toLowerCase()} time` : `${greeting(now)}${firstName ? `, ${firstName}` : ''}`}
-        emoji={meal ? mealEmoji(meal.meal.name) : '👋'}
+        emoji={meal ? mealEmoji(meal.meal.name) : ''}
         meal={meal}
-        dateLabel={dateLabel}
         planLine={planLine}
         done={todayWorkDone}
         total={todayWork}
@@ -156,10 +166,10 @@ export function Dashboard() {
         target={settings.dailyStudyTargetMinutes}
       />
 
-      <AskAI placeholder="Ask AI anything…" prompts={['What do I need to do today?', 'Plan my day', 'How is my attendance?']} />
+      <AskAI placeholder="A clearer plan starts with a question. Ask AI Pilot…" />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
+      <div className="dashboard-columns">
+        <div className="dashboard-main">
           <Slot k="upNext">
             <UpNext
               items={upNext}
@@ -173,22 +183,20 @@ export function Dashboard() {
           </Slot>
 
           <Slot k="overview">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
               <StatCard
                 to="/todos"
                 icon={ListChecks}
-                label="Today's tasks"
-                value={`${todayWorkDone}/${todayWork}`}
-                sub={todayWork === 0 ? 'Nothing planned' : todayWork === todayWorkDone ? 'All done 🎉' : `${todayWork - todayWorkDone} left`}
-                progress={todayWork ? (todayWorkDone / todayWork) * 100 : undefined}
+                label="Tasks remaining"
+                value={String(remainingTasks.length)}
+                sub={remainingTasks.length ? 'Due, overdue & undated' : 'All clear for today'}
               />
               <StatCard
-                to="/analytics"
-                icon={Target}
-                label="Self study"
-                value={formatMinutes(studyToday)}
-                sub={`of ${formatMinutes(settings.dailyStudyTargetMinutes)} target`}
-                progress={settings.dailyStudyTargetMinutes ? (studyToday / settings.dailyStudyTargetMinutes) * 100 : 0}
+                to="/classes"
+                icon={CalendarClock}
+                label="Classes today"
+                value={String(activeClasses.length)}
+                sub={activeClasses.length ? `${classesLeft} remaining` : 'A day for independent study'}
               />
               <StatCard
                 to="/deadlines"
@@ -281,7 +289,7 @@ export function Dashboard() {
 
           <Slot k="schedule">
           <Card>
-            <SectionTitle action={<Link to="/calendar" className="text-xs font-medium text-accent">Calendar</Link>}>Today's schedule</SectionTitle>
+            <SectionTitle action={<Link to="/calendar" className="text-xs font-medium text-accent">View calendar <ArrowRight className="inline size-3.5" /></Link>}>Today's schedule</SectionTitle>
             {classes.length === 0 && todaysEvents.length === 0 ? (
               <p className="text-sm text-ink-2">
                 No classes today.{' '}
@@ -290,80 +298,51 @@ export function Dashboard() {
                 </Link>
               </p>
             ) : (
-              <div className="divide-y divide-line">
-                {/* One timeline: classes and sessions by start time (all-day items last). */}
-                {[
-                  ...classes.map((c) => ({ start: c.startTime, key: `c${c.id}`, node: <ClassRow key={`c${c.id}`} occ={c} subject={subjects.get(c.subjectId)} /> })),
-                  ...todaysEvents.map((e) => ({
-                    start: e.startTime ?? '99:99',
-                    key: `e${e.id}`,
-                    node: <EventRow key={`e${e.id}`} e={e} subjects={subjects} minutesNow={minutesNow} also={alsoFor({ kind: 'event', event: e })} />,
-                  })),
-                ]
-                  .sort((a, b) => a.start.localeCompare(b.start) || a.key.localeCompare(b.key))
-                  .map((r) => r.node)}
-              </div>
+              <ScheduleTimeline items={[
+                ...classes.map((c) => ({
+                  start: c.startTime, end: c.endTime, key: `c${c.id}`,
+                  complete: c.status === 'present',
+                  past: timeToMinutes(c.endTime) <= minutesNow || c.status === 'cancelled' || c.status === 'rescheduled',
+                  status: c.status === 'present' ? 'Present' : c.status === 'absent' ? 'Absent' : c.status === 'cancelled' ? 'Cancelled' : c.status === 'rescheduled' ? 'Rescheduled' : timeToMinutes(c.endTime) <= minutesNow ? 'Ended · needs marking' : undefined,
+                  active: !c.status && timeToMinutes(c.startTime) <= minutesNow && timeToMinutes(c.endTime) > minutesNow,
+                  category: c.status === 'cancelled' ? 'Cancelled class' : c.status === 'rescheduled' ? 'Rescheduled class' : 'College class',
+                  node: <ClassRow occ={c} subject={subjects.get(c.subjectId)} />,
+                })),
+                ...todaysEvents.map((e) => ({
+                  start: e.startTime ?? '99:99', end: e.endTime, key: `e${e.id}`,
+                  complete: !!e.completedAt,
+                  past: !!e.endTime && timeToMinutes(e.endTime) <= minutesNow,
+                  status: !e.completedAt && !!e.endTime && timeToMinutes(e.endTime) <= minutesNow ? 'Ended · needs feedback' : undefined,
+                  active: !e.completedAt && !!e.startTime && timeToMinutes(e.startTime) <= minutesNow && !!e.endTime && timeToMinutes(e.endTime) > minutesNow,
+                  category: e.type === 'study' ? 'Independent study' : 'Personal session',
+                  node: <EventRow e={e} subjects={subjects} minutesNow={minutesNow} also={alsoFor({ kind: 'event', event: e })} />,
+                })),
+              ]} />
             )}
           </Card>
           </Slot>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-5">
-          <Slot k="attendance">
-          <Card>
-            <SectionTitle action={<Link to="/attendance" className="text-xs font-medium text-accent">Details</Link>}>Attendance</SectionTitle>
-            {attendance && attendance.overall.conducted > 0 && (
-              <div className="mb-3 flex items-baseline gap-2">
-                <span className="text-3xl font-semibold tracking-tight tabular">{fmtPct(attendance.overall.percent)}</span>
-                <span className="text-sm text-ink-2">overall</span>
-              </div>
-            )}
-            {subjectAttendance.length === 0 ? (
-              <p className="text-sm text-ink-2">Mark your classes as present or absent and your attendance will show here.</p>
-            ) : (
-              <ul className="space-y-3">
-                {subjectAttendance.map(({ subject, summary, thresholds }) => {
-                  const warn = summary.risk === 'at_risk' || summary.risk === 'below_min';
-                  return (
-                    <li key={subject.id}>
-                      <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <SubjectDot color={subject.color} />
-                          <span className="truncate">{subject.name}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1 font-medium tabular">
-                          {fmtPct(summary.percent)}
-                          {warn && <AlertTriangle className="size-3.5" style={{ color: riskColor(summary.risk) }} aria-label="At risk" />}
-                        </span>
-                      </div>
-                      <Meter value={summary.percent} color={riskColor(summary.risk)} marker={thresholds.min} label={`${subject.name} attendance`} />
-                      {warn && <p className="mt-1 text-xs text-ink-2">{summary.advice}</p>}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
-          </Slot>
+        <div className="dashboard-side">
+          <Slot k="attendance"><AttendancePanel attendance={attendance} /></Slot>
 
           <Slot k="revision">
-          <Card>
-            <SectionTitle>Revision</SectionTitle>
+          <Card className="revision-panel">
+            <SectionTitle action={<span className="eyebrow">Spaced repetition</span>}>Learning & revision</SectionTitle>
             <div className="flex items-center gap-3">
               <span className="flex size-11 items-center justify-center rounded-2xl bg-accent-soft text-accent">
                 <Repeat className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">
-                  {dueRevisions.length} topic{dueRevisions.length === 1 ? '' : 's'} due today
+                  {dueRevisions.length ? `${dueRevisions.length} topic${dueRevisions.length === 1 ? '' : 's'} to revisit` : 'A clear mind. All caught up.'}
                 </div>
-                <div className="text-xs text-muted">{overdueRevisions ? `${overdueRevisions} overdue` : 'Spaced repetition keeps it fresh'}</div>
+                <div className="text-xs text-muted">{overdueRevisions ? `${overdueRevisions} overdue · pick up where you left off` : dueRevisions.length ? 'Small reviews. Lasting knowledge.' : 'Your next review will appear here.'}</div>
               </div>
             </div>
-            <Link to="/revision" className="mt-3 block">
-              <Button variant={dueRevisions.length ? 'primary' : 'secondary'} className="w-full">
-                {dueRevisions.length ? 'Start Revision' : 'Open Revision'}
-              </Button>
+            <div className="revision-stats"><div><strong>{revisions.filter((r) => r.status === 'done' && doneOn(r.completedAt)).length}</strong><span>Completed today</span></div><div><strong>{revisions.filter((r) => r.status === 'pending' && r.dueDate > today).length}</strong><span>Upcoming reviews</span></div></div>
+            <Link to="/revision" className={cn('action-link mt-4', dueRevisions.length ? 'bg-accent text-accent-ink' : 'border border-line text-ink-2')}>
+              {dueRevisions.length ? 'Continue revision' : 'Explore your topics'}<ArrowRight className="size-4" />
             </Link>
           </Card>
           </Slot>
@@ -504,7 +483,6 @@ function Hero({
   greeting,
   emoji,
   meal,
-  dateLabel,
   planLine,
   done,
   total,
@@ -515,7 +493,6 @@ function Hero({
   greeting: string;
   emoji: string;
   meal: CurrentMeal | null;
-  dateLabel: string;
   planLine: string;
   done: number;
   total: number;
@@ -527,47 +504,23 @@ function Hero({
   const hasGoals = (useAll('goal')?.length ?? 0) > 0;
   const pct = total ? (done / total) * 100 : 0;
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 shadow-card sm:p-6">
-      <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 size-80 rounded-full bg-accent/12 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-16 size-64 rounded-full bg-accent/6 blur-3xl" />
-      <div className="relative flex items-start gap-4">
+    <section className="daily-hero">
+      <div className="relative flex items-center gap-4 sm:gap-8">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{dateLabel}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
-            {greeting} {emoji}
-          </h1>
-          {meal && (
-            <div className="mt-2 rounded-xl bg-accent-soft px-3 py-2 text-sm">
-              <span className="font-medium text-ink">Today: {meal.items}.</span>{' '}
-              <span className="text-ink-2">
-                Served until {formatTime12(meal.meal.end)}. Have a good meal!
-              </span>
-            </div>
-          )}
-          <p className="mt-1 text-sm text-ink-2">{planLine}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-2">
-              <Flame className="size-3.5" style={{ color: streak ? 'var(--color-serious)' : 'var(--muted)' }} />
-              {streak ? `${streak}-day streak` : 'Start a streak today'}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-2 tabular">
-              <Target className="size-3.5 text-accent" />
-              {formatMinutes(studied)} / {formatMinutes(target)} studied
-            </span>
-          </div>
+          <p className="eyebrow text-accent">A little focus goes a long way</p>
+          <h1 className="mt-2 text-[28px] font-semibold leading-tight tracking-tight sm:text-[36px]">Your day,<br className="sm:hidden" /> under control.</h1>
+          <p className="mt-2 text-sm leading-relaxed text-ink-2">{planLine}</p>
+          {meal && <p className="mt-3 text-xs leading-relaxed text-ink-2"><span className="font-medium text-ink">{greeting} {emoji}.</span> {meal.items} · until {formatTime12(meal.meal.end)}</p>}
         </div>
-        <Link to="/todos" className="shrink-0 rounded-full" aria-label={`Today: ${done} of ${total} done. Open Todos`}>
-          <ProgressRing value={pct} size={78} stroke={7} label="Today's work done">
-            <span className="flex flex-col items-center leading-none">
-              <span className="text-base font-semibold tabular">
-                {done}/{total}
-              </span>
-              <span className="mt-0.5 text-[10px] text-muted">today</span>
-            </span>
-          </ProgressRing>
+        <Link to="/todos" className="hero-progress shrink-0 rounded-full" aria-label={`Today: ${done} of ${total} done. Open Todos`}>
+          <ProgressRing value={pct} size={96} stroke={5} label="Today's work done"><span className="flex flex-col items-center leading-none"><span className="text-xl font-semibold tabular">{done}<span className="text-sm text-muted">/{total}</span></span><span className="mt-1.5 text-[10px] text-ink-2">completed</span></span></ProgressRing>
         </Link>
       </div>
-      <div className="no-scrollbar relative -mx-5 mt-4 flex gap-2 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
+      <div className="hero-metrics">
+        <Link to="/analytics"><Target className="size-4 text-accent" /><div><strong>{formatMinutes(studied)}</strong><span>of {formatMinutes(target)} study target</span></div></Link>
+        <Link to="/analytics"><Flame className="size-4 text-warning-ink" /><div><strong>{streak ? `${streak} days` : 'A fresh start'}</strong><span>{streak ? 'current learning streak' : 'Study today to start a streak'}</span></div></Link>
+      </div>
+      <div className="no-scrollbar relative mt-5 flex gap-2 overflow-x-auto pb-1">
         {QUICK.map(({ kind, label, icon: Icon }) =>
           // Once there are goals, the chip opens the goals dashboard; adding one is a tap away there.
           kind === 'goal' && hasGoals ? (
@@ -584,26 +537,30 @@ function Hero({
             </button>
           ),
         )}
-        <Link to="/attendance" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink">
-          <ChartPie className="size-4 text-accent" /> Attendance
-        </Link>
+        <Link to="/revision" className="quick-link"><Repeat className="size-4 text-accent" /> Revision</Link>
+        <Link to="/classes" className="quick-link"><CalendarClock className="size-4 text-accent" /> Timetable</Link>
       </div>
     </section>
   );
 }
 
 /** Visible home cards, in order (Settings → Appearance, or ask AI Pilot). */
+const DEFAULT_HOME_ORDER: readonly HomeSection[] = ['overview', 'upNext', 'schedule', 'attendance', 'priorities', 'revision', 'markAttendance', 'goals', 'comingUp', 'thisWeek', 'aiPilot'];
+function homeOrder(sections: readonly HomeSection[]) {
+  // Upgrade the original default layout, while respecting a student's custom layout.
+  return sections.join(',') === HOME_SECTIONS.join(',') ? DEFAULT_HOME_ORDER : sections;
+}
 const HomeLayout = createContext<readonly HomeSection[]>(HOME_SECTIONS);
 
 function Slot({ k, children }: { k: HomeSection; children: ReactNode }) {
   const order = useContext(HomeLayout).indexOf(k);
   if (order === -1 || !children) return null;
-  return <div style={{ order }}>{children}</div>;
+  return <div className="home-slot" data-section={k} style={{ order }}>{children}</div>;
 }
 
 function StatCard({ to, icon: Icon, label, value, sub, progress, tone }: { to: string; icon: LucideIcon; label: string; value: number | string; sub: string; progress?: number; tone?: 'good' | 'muted' }) {
   return (
-    <Link to={to} className="min-w-0 rounded-2xl border border-line bg-surface p-3.5 shadow-card transition-[box-shadow,transform] hover:-translate-y-px hover:shadow-lift sm:p-4">
+    <Link to={to} className="dashboard-stat">
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-2">
         <span className="truncate">{label}</span>
         <span className={cn('flex size-7 shrink-0 items-center justify-center rounded-lg', tone === 'good' ? 'bg-good/15 text-good-ink' : tone === 'muted' ? 'bg-surface-2 text-muted' : 'bg-accent-soft text-accent')}>

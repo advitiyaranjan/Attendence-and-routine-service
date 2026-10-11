@@ -55,13 +55,13 @@ export function ClassRow({ occ, subject, compact }: { occ: ClassOccurrence; subj
   }
 
   return (
-    <div className={cn('flex items-center gap-3 py-2', moved && 'opacity-60')}>
+    <div className={cn('class-row flex flex-wrap items-center gap-2.5 py-3', moved && 'opacity-60')}>
       <div className="w-16 shrink-0 text-xs text-ink-2 tabular">
         <div>{formatTime12(occ.startTime)}</div>
         {!compact && <div className="text-muted">{formatTime12(occ.endTime)}</div>}
       </div>
       <SubjectDot color={subject?.color ?? '#888'} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[70px] flex-1">
         <div className={cn('truncate text-sm font-medium', moved && 'line-through')}>{subject?.name ?? 'Unknown subject'}</div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
           {occ.room && <span>Room {occ.room}</span>}

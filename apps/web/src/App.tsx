@@ -75,7 +75,7 @@ function useNotificationActions() {
   }, [navigate]);
 }
 
-const themePrefs = (s: Settings | null | undefined) => ({ theme: s?.theme ?? 'system', accent: s?.accent ?? 'indigo', density: s?.density, reduceMotion: s?.reduceMotion });
+const themePrefs = (s: Settings | null | undefined) => ({ theme: s?.theme ?? 'dark', accent: s?.accent ?? 'blue', density: s?.density, reduceMotion: s?.reduceMotion });
 
 /** Opens the student's chosen start page once per launch (only when the app opened on Home). */
 let startPageApplied = false;

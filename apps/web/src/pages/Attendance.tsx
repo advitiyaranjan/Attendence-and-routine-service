@@ -15,7 +15,7 @@ import {
   type ClassOccurrence,
 } from '@student-os/core';
 import { ClassRow } from '../components/ClassRow';
-import { Card, EmptyState, Field, Input, Meter, PageHeader, RiskPill, riskColor, Select, SectionTitle, Stat, SubjectDot, cn } from '../components/ui';
+import { Card, EmptyState, Field, Input, Meter, PageHeader, RiskPill, riskColor, Select, SectionTitle, Stat, SubjectDot, cn, Spinner } from '../components/ui';
 import { useAttendance, useOccurrences, useSettings, useSubjectMap, useToday, type SubjectAttendance } from '../lib/hooks';
 
 export default function Attendance() {
@@ -24,7 +24,7 @@ export default function Attendance() {
   const subjects = useSubjectMap();
   const today = useToday();
 
-  if (!att) return null;
+  if (!att) return <Spinner label="Loading attendance" />;
   if (att.subjects.length === 0) {
     return (
       <>

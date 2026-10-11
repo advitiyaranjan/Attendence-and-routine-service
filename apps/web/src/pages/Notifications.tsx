@@ -75,6 +75,7 @@ export default function Notifications() {
     <div className="space-y-5">
       <PageHeader
         title="Notifications"
+        subtitle="Read notifications are automatically cleared after 24 hours."
         actions={
           <>
             <Button size="sm" variant="secondary" icon={<CheckCheck className="size-4" />} onClick={() => void markAllRead()}>

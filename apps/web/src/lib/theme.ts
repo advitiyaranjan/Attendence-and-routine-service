@@ -2,7 +2,7 @@ import type { Settings } from '@student-os/core';
 
 const ACCENTS: Record<string, { light: string; dark: string }> = {
   indigo: { light: '#4f46e5', dark: '#818cf8' },
-  blue: { light: '#2563eb', dark: '#60a5fa' },
+  blue: { light: '#3266c6', dark: '#6ea8fe' },
   cyan: { light: '#0e7490', dark: '#22d3ee' },
   teal: { light: '#0f766e', dark: '#2dd4bf' },
   emerald: { light: '#047857', dark: '#34d399' },

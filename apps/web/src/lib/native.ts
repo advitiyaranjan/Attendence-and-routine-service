@@ -17,7 +17,7 @@ import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { LocalNotifications, type LocalNotificationSchema } from '@capacitor/local-notifications';
 import { localMomentNow, planNotifications, type NotificationActionId, type NotificationSettings, type PlannedNotification } from '@student-os/core';
 import { db, kvGet, kvSet } from './db';
-import { recordDelivered, toItem, type NotifyItem } from './notify-core';
+import { markReadOnDevice, recordDelivered, toItem, type NotifyItem } from './notify-core';
 import { isNative } from './platform';
 import { loadPlannerData, loadSettings } from './queries';
 import { addDataListener } from './repo';
@@ -285,7 +285,7 @@ function applyAlarmAnswers(handlers: NativeHandlers): Promise<void> {
           continue;
         }
         if (!(await db.notifications.get(item.id))) await recordDelivered(item, 'local');
-        await db.notifications.update(item.id, { readAt: new Date().toISOString() });
+        await markReadOnDevice([item.id]);
         if (a.action === 'stop') continue;
         const href = await handlers.onAction(a.action, { ...item, ...(item.data ?? {}) });
         if (a.action === 'open' && href) window.dispatchEvent(new CustomEvent('sos-navigate', { detail: href }));
@@ -353,7 +353,7 @@ export async function initNative(handlers: NativeHandlers) {
     if (!item.id) return;
     // It may have fired while the app was closed: record it before marking it read.
     if (!(await db.notifications.get(item.id))) await recordDelivered(item, 'local');
-    await db.notifications.update(item.id, { readAt: new Date().toISOString() });
+    await markReadOnDevice([item.id]);
     const action = (actionId === 'tap' ? 'open' : actionId) as NotificationActionId;
     const href = await handlers.onAction(action, { ...item, ...(item.data ?? {}) });
     if (href) window.dispatchEvent(new CustomEvent('sos-navigate', { detail: href }));

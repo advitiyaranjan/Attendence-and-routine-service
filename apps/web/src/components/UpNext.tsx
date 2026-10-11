@@ -137,10 +137,10 @@ export function UpNext({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
-      className="relative touch-pan-y select-none overflow-hidden rounded-3xl bg-accent p-5 text-accent-ink shadow-pop outline-none focus-visible:ring-2 focus-visible:ring-ink sm:p-6"
+      className="relative touch-pan-y select-none overflow-hidden rounded-[20px] border border-accent/25 bg-surface p-5 text-ink shadow-card outline-none focus-visible:ring-2 focus-visible:ring-ink sm:p-6"
     >
-      <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-white/10" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-20 right-20 size-40 rounded-full bg-white/5" />
+      <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-accent/5" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-20 right-20 size-40 rounded-full bg-accent/5" />
       <div
         key={index}
         className={cn('relative', drag === 0 && dir === 'right' && 'animate-slide-from-right', drag === 0 && dir === 'left' && 'animate-slide-from-left')}
@@ -157,15 +157,15 @@ export function UpNext({
       </div>
       {count > 1 && (
         <div className="relative mt-4 flex items-center justify-between gap-2">
-          <button onClick={() => go(-1)} disabled={index === 0} aria-label="Previous" className="rounded-full p-1 opacity-80 hover:bg-white/15 disabled:opacity-30">
+          <button onClick={() => go(-1)} disabled={index === 0} aria-label="Previous" className="flex size-10 items-center justify-center rounded-full opacity-80 hover:bg-accent-soft disabled:opacity-30">
             <ChevronLeft className="size-4" />
           </button>
           <div className="flex items-center gap-1.5" aria-label={`${index + 1} of ${count}`}>
             {Array.from({ length: count }, (_, i) => (
-              <span key={i} className={cn('h-1.5 rounded-full bg-white transition-all', i === index ? 'w-4' : 'w-1.5 opacity-40')} />
+              <span key={i} className={cn('h-1.5 rounded-full bg-accent transition-all', i === index ? 'w-4' : 'w-1.5 opacity-40')} />
             ))}
           </div>
-          <button onClick={() => go(1)} disabled={index === count - 1} aria-label="Next" className="rounded-full p-1 opacity-80 hover:bg-white/15 disabled:opacity-30">
+          <button onClick={() => go(1)} disabled={index === count - 1} aria-label="Next" className="flex size-10 items-center justify-center rounded-full opacity-80 hover:bg-accent-soft disabled:opacity-30">
             <ChevronRight className="size-4" />
           </button>
         </div>
@@ -220,7 +220,7 @@ function Slide({
           {until}
         </Meta>
         {summary && summary.conducted > 0 && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-sm">
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent-soft px-3 py-1 text-sm">
             Attendance <strong className="tabular">{fmtPct(summary.percent)}</strong>
             {(summary.risk === 'at_risk' || summary.risk === 'below_min') && <AlertTriangle className="size-4" aria-label="Below target" />}
           </div>
@@ -286,7 +286,7 @@ function Slide({
 
 function DoneButton({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium hover:bg-white/25">
+    <button onClick={onClick} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-2.5 text-sm font-medium hover:bg-surface-2">
       <Check className="size-4" /> Mark done
     </button>
   );
@@ -317,7 +317,7 @@ function Actions({ target, alsoFor }: { target: FeedbackTarget; alsoFor: (target
 
 function Pill({ icon, onClick, children }: { icon: ReactNode; onClick: () => void; children: string }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-sm font-medium hover:bg-white/25">
+    <button onClick={onClick} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-accent-soft px-3 py-2.5 text-sm font-medium hover:bg-surface-2">
       {icon} {children}
     </button>
   );
