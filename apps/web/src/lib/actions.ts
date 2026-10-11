@@ -11,6 +11,7 @@ import {
   type RevisionSchedule,
 } from '@student-os/core';
 import { db } from './db';
+import { occurrencesBetween } from './queries';
 import { create, createMany, getSettings, removeMany, update, upsert } from './repo';
 
 export const SUBJECT_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
@@ -40,6 +41,55 @@ export async function markAttendance(occ: ClassOccurrence, status: AttendanceSta
   if (status) {
     await create('attendanceRecord', { instanceId: occ.id, subjectId: occ.subjectId, date: occ.date, status, markedAt });
   }
+}
+
+export interface LostMark {
+  occ: ClassOccurrence;
+  status: AttendanceStatus;
+  markedAt: string;
+}
+
+/**
+ * Past classes that show as unmarked although the attendance history (append-only, never
+ * cleared) has a mark for them. Used to restore marks after a class's status was lost.
+ */
+export async function findLostMarks(today: ISODate = todayISO()): Promise<LostMark[]> {
+  const records = (await db.entity('attendanceRecord').toArray()).filter((r) => !r.deletedAt && r.date <= today);
+  if (!records.length) return [];
+  const latest = new Map<string, (typeof records)[number]>();
+  for (const r of records) {
+    const prev = latest.get(r.instanceId);
+    if (!prev || r.markedAt > prev.markedAt) latest.set(r.instanceId, r);
+  }
+  const dates = [...latest.values()].map((r) => r.date).sort();
+  const settings = await getSettings();
+  const occs = await occurrencesBetween(dates[0]!, dates.at(-1)!, settings);
+  const out: LostMark[] = [];
+  for (const occ of occs) {
+    if (occ.status !== null) continue;
+    const r = latest.get(occ.id);
+    if (r && r.status !== 'unsure') out.push({ occ, status: r.status, markedAt: r.markedAt });
+  }
+  return out.sort((a, b) => a.occ.date.localeCompare(b.occ.date) || a.occ.startTime.localeCompare(b.occ.startTime));
+}
+
+/** Puts lost marks back on their classes. The history already has them, so no new history rows. */
+export async function restoreLostMarks(marks: LostMark[]): Promise<number> {
+  for (const { occ, status } of marks) {
+    await upsert('classInstance', occ.id, {
+      scheduleId: occ.scheduleId,
+      subjectId: occ.subjectId,
+      date: occ.date,
+      startTime: occ.startTime,
+      endTime: occ.endTime,
+      room: occ.room,
+      status,
+      isExtra: occ.isExtra,
+      rescheduledFromId: occ.rescheduledFromId,
+      rescheduledToId: occ.rescheduledToId,
+    });
+  }
+  return marks.length;
 }
 
 /** Move a class: the original stops counting, a replacement is created on the new slot. */

@@ -24,6 +24,7 @@ import {
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { AskAI } from '../components/AskAI';
 import { ClassRow } from '../components/ClassRow';
+import { RestoreMarks } from '../components/RestoreMarks';
 import { completeTarget, FeedbackSheet, notDoneTarget, type FeedbackTarget } from '../components/ItemFeedback';
 import { UpNext, upNextItems } from '../components/UpNext';
 import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
@@ -222,6 +223,8 @@ export function Dashboard() {
 
           <Slot k="markAttendance">
             {unmarked.length > 0 && (
+            <div className="flex flex-col gap-5">
+            <RestoreMarks />
             <Card>
               <SectionTitle action={<span className="text-xs text-muted">{unmarked.length} to mark</span>}>Did you attend?</SectionTitle>
               <div className="divide-y divide-line">
@@ -241,6 +244,7 @@ export function Dashboard() {
                 </Link>
               )}
             </Card>
+            </div>
             )}
           </Slot>
 

@@ -15,6 +15,7 @@ import {
   type ClassOccurrence,
 } from '@student-os/core';
 import { ClassRow } from '../components/ClassRow';
+import { RestoreMarks } from '../components/RestoreMarks';
 import { Card, EmptyState, Field, Input, Meter, PageHeader, RiskPill, riskColor, Select, SectionTitle, Stat, SubjectDot, cn } from '../components/ui';
 import { useAttendance, useOccurrences, useSettings, useSubjectMap, useToday, type SubjectAttendance } from '../lib/hooks';
 
@@ -43,6 +44,7 @@ export default function Attendance() {
         title="Attendance"
         subtitle={`Minimum ${settings.minAttendance}% · target ${settings.targetAttendance}% unless a subject or basket sets its own. Cancelled and rescheduled classes don't count.`}
       />
+      <RestoreMarks />
       <AskAI placeholder="Ask AI about my attendance…" prompts={['How is my attendance?', 'Which subjects are at risk?', 'Can I skip tomorrow?']} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
