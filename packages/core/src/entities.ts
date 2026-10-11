@@ -85,6 +85,8 @@ export const classScheduleSchema = syncMeta.extend({
   active: z.boolean().default(true),
   validFrom: isoDate.nullable().default(null),
   validUntil: isoDate.nullable().default(null),
+  /** Long-term goal this weekly lecture counts towards. */
+  goalId: z.string().max(64).nullable().default(null),
 });
 export type ClassSchedule = z.infer<typeof classScheduleSchema>;
 
@@ -111,6 +113,8 @@ export const classInstanceSchema = syncMeta.extend({
   rescheduledFromId: z.string().nullable().default(null),
   /** Extra / makeup class that does not come from a schedule slot. */
   isExtra: z.boolean().default(false),
+  /** Long-term goal this class counts towards; null = the weekly slot's goal (if any). */
+  goalId: z.string().max(64).nullable().default(null),
 });
 export type ClassInstance = z.infer<typeof classInstanceSchema>;
 
@@ -235,6 +239,9 @@ export const milestoneSchema = syncMeta.extend({
   goalId: z.string().min(1).max(64),
   title: z.string().min(1).max(200),
   description: optText(5000),
+  /** When work on this milestone begins; null = right after the previous one (or the goal start). */
+  startDate: isoDate.nullable().default(null),
+  /** End date: when the milestone should be done. */
   targetDate: isoDate.nullable().default(null),
   status: milestoneStatus.default('todo'),
   priority: taskPriority.default('medium'),

@@ -4,6 +4,8 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
+  activeMilestones,
+  addDays,
   byOrder,
   currentMilestone,
   goalCategory,
@@ -50,6 +52,8 @@ export interface GoalSummary {
   progress: GoalProgress;
   health: GoalHealth;
   current: Milestone | null;
+  /** Milestones active today: their start→end dates span today, they are in progress, or the current stage. */
+  active: Milestone[];
   /** The concrete next step: the current milestone's first open task, else the goal's. */
   nextTask: Task | null;
   urgency: number;
@@ -65,14 +69,22 @@ export function summarizeGoal(goal: Goal, data: GoalData, today: ISODate): GoalS
   const byDue = (a: Task, b: Task) => (a.plannedDate ?? a.dueDate ?? '9999').localeCompare(b.plannedDate ?? b.dueDate ?? '9999') || a.createdAt.localeCompare(b.createdAt);
   // The current milestone's first open task; failing that, any open task of the goal.
   const nextTask = (current && open.filter((t) => t.milestoneId === current.id).sort(byDue)[0]) || (open.sort(byDue)[0] ?? null);
-  return { goal, milestones, tasks, progress, health, current, nextTask, urgency: goalUrgency(health, goal) };
+  const active = goal.status === 'active' ? activeMilestones(milestones, today) : [];
+  return { goal, milestones, tasks, progress, health, current, active, nextTask, urgency: goalUrgency(health, goal) };
 }
 
 export const summarizeAll = (data: GoalData, today: ISODate) => data.goals.map((g) => summarizeGoal(g, data, today));
 
 export interface MilestoneDraft {
   title: string;
+  startDate?: string | null;
   targetDate: string | null;
+}
+
+/** A milestone with no start date begins the day after the previous one ends (or when the goal starts). */
+function defaultStart(prevEnd: string | null | undefined, goalStart: string, end: string | null): string {
+  const start = prevEnd ? addDays(prevEnd, 1) : goalStart;
+  return end && start > end ? end : start;
 }
 
 export async function createGoal(data: NewRecord<'goal'>, milestones: MilestoneDraft[]): Promise<Goal> {
@@ -80,7 +92,12 @@ export async function createGoal(data: NewRecord<'goal'>, milestones: MilestoneD
   const cat = goalCategory(data.category ?? 'career');
   const goal = await create('goal', { icon: cat.icon, color: cat.color, startDate: todayISO(), order: count, ...data });
   const clean = milestones.filter((m) => m.title.trim());
-  if (clean.length) await createMany('milestone', clean.map((m, i) => ({ goalId: goal.id, title: m.title.trim(), targetDate: m.targetDate, order: i })));
+  if (clean.length) {
+    await createMany(
+      'milestone',
+      clean.map((m, i) => ({ goalId: goal.id, title: m.title.trim(), startDate: m.startDate || defaultStart(clean[i - 1]?.targetDate, goal.startDate, m.targetDate), targetDate: m.targetDate, order: i })),
+    );
+  }
   return goal;
 }
 
@@ -111,7 +128,9 @@ async function goalMilestones(goalId: string) {
 
 export async function addMilestone(goalId: string, data: Omit<NewRecord<'milestone'>, 'goalId'>): Promise<Milestone> {
   const ms = await goalMilestones(goalId);
-  return create('milestone', { ...data, goalId, order: (ms.at(-1)?.order ?? -1) + 1 });
+  const goal = (await db.entity('goal').get(goalId))!;
+  const startDate = data.startDate || defaultStart(ms.at(-1)?.targetDate, goal.startDate, data.targetDate ?? null);
+  return create('milestone', { ...data, startDate, goalId, order: (ms.at(-1)?.order ?? -1) + 1 });
 }
 
 export const updateMilestone = (id: string, patch: Partial<Milestone>) => update('milestone', id, patch);

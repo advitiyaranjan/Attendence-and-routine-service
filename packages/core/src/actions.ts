@@ -51,8 +51,14 @@ export const examTarget = z.object({ ref, title: optStr(), subject: optStr() });
 export const assignmentTarget = z.object({ ref, title: optStr() });
 export const goalTarget = z.object({ ref, title: optStr() });
 export const milestoneTarget = z.object({ ref, title: optStr(), goal: optStr() });
-const milestoneInput = z.object({ title: z.string().trim().min(1).max(200), targetDate: optDate });
 const goalTaskInput = z.object({ title: z.string().trim().min(1).max(300), dueDate: optDate, plannedDate: optDate });
+/** A new milestone, optionally already broken into tasks. */
+const milestoneInput = z.object({ title: z.string().trim().min(1).max(200), startDate: optDate, targetDate: optDate, tasks: z.array(goalTaskInput).max(40).nullish().transform((v) => v ?? []) });
+/** A milestone named by title or ref; models also send it as a target object ({ ref } / { title }). */
+const milestoneName = z
+  .union([z.string(), z.object({ ref: z.string().nullish(), title: z.string().nullish() })])
+  .nullish()
+  .transform((v) => (typeof v === 'string' ? v : (v?.ref ?? v?.title ?? null))?.trim().slice(0, 200) || null);
 export type ClassTarget = z.infer<typeof classTarget>;
 
 const eventInput = z.object({
@@ -153,7 +159,7 @@ export const ACTIONS = {
     description:
       'Create a long-term goal (career, exam, academic, skill, project, personal, health, finance or a custom category), optionally with ordered milestones. Use for multi-week/month ambitions, not single tasks.',
     params:
-      '{ title, category?: career|exam|academic|skill|project|personal|health|finance|<custom>, startDate?: YYYY-MM-DD, targetDate?: YYYY-MM-DD, priority?, description?, milestones?: [ { title, targetDate? } ] }',
+      '{ title, category?: career|exam|academic|skill|project|personal|health|finance|<custom>, startDate?: YYYY-MM-DD, targetDate?: YYYY-MM-DD, priority?, description?, milestones?: [ { title, startDate?, targetDate?: end date, tasks?: [ { title, dueDate?, plannedDate? } ] } ] }',
     schema: z.object({
       title: z.string().trim().min(1).max(200),
       category: optStr(50),
@@ -189,8 +195,8 @@ export const ACTIONS = {
   }),
   add_milestones: define({
     name: 'add_milestones',
-    description: "Add milestones to the end of an existing goal's roadmap.",
-    params: '{ goal: { ref? | title? }, milestones: [ { title, targetDate? } ] }',
+    description: "Add milestones to the end of an existing goal's roadmap, optionally each with its tasks.",
+    params: '{ goal: { ref? | title? }, milestones: [ { title, startDate?, targetDate?: end date, tasks?: [ { title, dueDate?, plannedDate? } ] } ] }',
     schema: z.object({ goal: goalTarget, milestones: z.array(milestoneInput).min(1).max(30) }),
     kind: 'create',
     permissions: ['createTasks'],
@@ -198,12 +204,13 @@ export const ACTIONS = {
   }),
   update_milestone: define({
     name: 'update_milestone',
-    description: 'Change a milestone: rename, reschedule, or set its status (todo, in_progress, blocked, done).',
-    params: '{ target: { ref? | title?, goal? }, changes: { title?, targetDate?, status?: todo|in_progress|blocked|done, notes? } }',
+    description: 'Change a milestone: rename, reschedule its start or end date, or set its status (todo, in_progress, blocked, done).',
+    params: '{ target: { ref? | title?, goal? }, changes: { title?, startDate?, targetDate?: end date, status?: todo|in_progress|blocked|done, notes? } }',
     schema: z.object({
       target: milestoneTarget,
       changes: z.object({
         title: optStr(200),
+        startDate: optDate,
         targetDate: optDate,
         status: z.enum(['todo', 'in_progress', 'blocked', 'done']).nullish(),
         notes: optStr(5000),
@@ -215,12 +222,37 @@ export const ACTIONS = {
   }),
   add_goal_tasks: define({
     name: 'add_goal_tasks',
-    description: "Break a goal (or one of its milestones) into concrete tasks. Tasks with a date also appear in Todos on that day; undated ones wait on the roadmap.",
-    params: '{ goal: { ref? | title? }, milestone?: milestone title or ref, tasks: [ { title, dueDate?, plannedDate? } ] }',
-    schema: z.object({ goal: goalTarget, milestone: optStr(200), tasks: z.array(goalTaskInput).min(1).max(40) }),
+    description:
+      "Add concrete tasks to an existing milestone of a goal (or to the goal itself). Use the milestone's ref (\"l…\") when you have it; the goal can then be omitted. Tasks with a date also appear in Todos on that day; undated ones wait on the roadmap.",
+    params: '{ goal?: { ref? | title? }, milestone?: milestone ref or title, tasks: [ { title, dueDate?, plannedDate? } ] }',
+    schema: z
+      .object({ goal: goalTarget.nullish().transform((v) => v ?? { ref: null, title: null }), milestone: milestoneName, tasks: z.array(goalTaskInput).min(1).max(40) })
+      .refine((v) => v.goal.ref || v.goal.title || v.milestone, 'Name the goal or the milestone'),
     kind: 'create',
     permissions: ['createTasks'],
     affects: ['Goal roadmap', 'Tasks', 'Goal progress'],
+  }),
+  link_to_goal: define({
+    name: 'link_to_goal',
+    description:
+      'Map an existing task or lecture to a goal (and optionally one of its milestones), or unlink it (unlink=true). A lecture is a weekly timetable slot ("w…" ref), one class ("c…" ref; its weekly slot is linked unless onlyThisClass), or every weekly lecture of a subject (lecture.subject only).',
+    params:
+      '{ item: task|lecture, task?: { ref? | title? }, lecture?: { ref?, subject?, date?: YYYY-MM-DD, time?: HH:MM }, onlyThisClass?: boolean, goal?: { ref? | title? }, milestone?: milestone ref or title (tasks only), unlink?: boolean }',
+    schema: z
+      .object({
+        item: z.enum(['task', 'lecture']),
+        task: taskTarget.nullish().transform((v) => v ?? null),
+        lecture: classTarget.nullish().transform((v) => v ?? null),
+        onlyThisClass: z.boolean().nullish().transform((v) => !!v),
+        goal: goalTarget.nullish().transform((v) => v ?? { ref: null, title: null }),
+        milestone: milestoneName,
+        unlink: z.boolean().nullish().transform((v) => !!v),
+      })
+      .refine((v) => (v.item === 'task' ? !!(v.task?.ref || v.task?.title) : !!(v.lecture?.ref || v.lecture?.subject)), 'Name the task or lecture')
+      .refine((v) => v.unlink || v.goal.ref || v.goal.title || v.milestone, 'Name the goal'),
+    kind: 'modify',
+    permissions: ['modifyTasks'],
+    affects: ['Goals', 'Goal progress'],
   }),
   delete_goal: define({
     name: 'delete_goal',
@@ -732,6 +764,7 @@ export const ACTION_AREA: Record<ActionName, AIArea | null> = {
   add_milestones: 'tasks',
   update_milestone: 'tasks',
   add_goal_tasks: 'tasks',
+  link_to_goal: 'tasks',
   delete_goal: 'tasks',
   create_class: 'schedule',
   cancel_class: 'schedule',

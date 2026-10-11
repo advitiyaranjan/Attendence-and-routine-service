@@ -209,6 +209,37 @@ describe('subjects and settings', () => {
     if (resched.kind === 'proposal') await confirmProposal(resched.proposal);
     expect((await db.entity('goal').get(goal.id))!).toMatchObject({ targetDate: '2027-03-15', status: 'paused' });
 
+    // Tasks into a milestone named only by a ref object (no goal), as models often send it.
+    const byRef = await prepareAction('add_goal_tasks', parse('add_goal_tasks', { milestone: { ref: refOf('l', ms[1]!.id) }, tasks: [{ title: 'Mock test 1' }] }));
+    expect(byRef).toMatchObject({ kind: 'proposal', proposal: { heading: '📝 Crack GATE › Mock tests' } });
+    if (byRef.kind === 'proposal') await confirmProposal(byRef.proposal);
+    expect((await db.entity('task').toArray()).find((t) => t.title === 'Mock test 1')).toMatchObject({ goalId: goal.id, milestoneId: ms[1]!.id });
+
+    // New milestones arrive with their tasks and a start date right after the previous milestone ends.
+    const more = await prepareAction('add_milestones', parse('add_milestones', { goal: { ref: refOf('g', goal.id) }, milestones: [{ title: 'Revision', targetDate: '2027-03-10', tasks: [{ title: 'Revise OS' }, { title: 'Revise CN' }] }] }));
+    expect(more).toMatchObject({ kind: 'proposal' });
+    if (more.kind === 'proposal') await confirmProposal(more.proposal);
+    const revision = (await db.entity('milestone').toArray()).find((m) => m.title === 'Revision')!;
+    expect(revision).toMatchObject({ startDate: '2027-03-02', targetDate: '2027-03-10' });
+    expect((await db.entity('task').toArray()).filter((t) => t.milestoneId === revision.id).map((t) => t.title).sort()).toEqual(['Revise CN', 'Revise OS']);
+
+    // Map an existing task and every weekly DBMS lecture to the goal.
+    const loose = await create('task', { title: 'Read Galvin chapter 5' });
+    const linkTask = await prepareAction('link_to_goal', parse('link_to_goal', { item: 'task', task: { title: 'Galvin chapter' }, milestone: 'syllabus' }));
+    expect(linkTask).toMatchObject({ kind: 'proposal', proposal: { lines: ['Goal: — → 📝 Crack GATE › Finish syllabus'] } });
+    if (linkTask.kind === 'proposal') await confirmProposal(linkTask.proposal);
+    expect((await db.entity('task').get(loose.id))!).toMatchObject({ goalId: goal.id, milestoneId: ms[0]!.id });
+
+    const linkLectures = await prepareAction('link_to_goal', parse('link_to_goal', { item: 'lecture', lecture: { subject: 'DBMS' }, goal: { title: 'GATE' } }));
+    expect(linkLectures.kind).toBe('proposal');
+    if (linkLectures.kind !== 'proposal') return;
+    const linkLog = await confirmProposal(linkLectures.proposal);
+    const dbmsSlots = (await db.entity('classSchedule').toArray()).filter((c) => !c.deletedAt && c.active && (linkLectures.proposal.resolved.ids as string[]).includes(c.id));
+    expect(dbmsSlots.length).toBeGreaterThan(0);
+    expect(dbmsSlots.every((c) => c.goalId === goal.id)).toBe(true);
+    await undoLog(linkLog.logId!);
+    expect((await db.entity('classSchedule').get(dbmsSlots[0]!.id))!.goalId).toBeNull();
+
     const del = await prepareAction('delete_goal', parse('delete_goal', { target: { title: 'Crack GATE' } }));
     expect(del.kind).toBe('proposal');
     if (del.kind === 'proposal') await confirmProposal(del.proposal);

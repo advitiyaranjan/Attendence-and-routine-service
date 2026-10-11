@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentMilestone, goalHealth, goalProgress, goalSchema, milestoneProgress, milestoneSchema, milestoneState, taskSchema, type Goal, type Milestone, type Task } from './index';
+import { activeMilestones, currentMilestone, goalHealth, goalProgress, goalSchema, milestoneProgress, milestoneSchema, milestoneState, taskSchema, type Goal, type Milestone, type Task } from './index';
 
 const meta = (id: string) => ({ id, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', deletedAt: null, version: 0, deviceId: 'd', syncStatus: 'synced' as const });
 const goal = (p: Partial<Goal> = {}): Goal => goalSchema.parse({ ...meta('g'), title: 'Internship', startDate: '2026-01-01', targetDate: '2026-12-31', ...p });
@@ -60,6 +60,17 @@ describe('roadmap', () => {
 
   it('prefers a milestone marked in progress as current', () => {
     expect(currentMilestone([ms('m1', 0), ms('m2', 1, { status: 'in_progress' })])?.id).toBe('m2');
+  });
+
+  it('marks every milestone whose start→end dates span today as active', () => {
+    const milestones = [
+      ms('m1', 0, { startDate: '2026-02-01', targetDate: '2026-03-10' }),
+      ms('m2', 1, { startDate: '2026-02-20', targetDate: '2026-04-01' }),
+      ms('m3', 2, { startDate: '2026-03-15', targetDate: '2026-05-01' }),
+    ];
+    expect(activeMilestones(milestones, '2026-03-01').map((m) => m.id)).toEqual(['m1', 'm2']);
+    // The current stage is not active before its start date.
+    expect(milestoneState(milestones[2]!, '2026-03-01', 'm3')).toBe('upcoming');
   });
 
   it('marks past-date open milestones overdue, and blocked ones blocked', () => {

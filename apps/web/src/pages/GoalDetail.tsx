@@ -24,7 +24,7 @@ import {
   Trash2,
   Trophy,
 } from 'lucide-react';
-import { diffDays, formatMinutes, milestoneProgress, milestoneState, type Goal, type Milestone, type Task } from '@student-os/core';
+import { diffDays, formatMinutes, milestoneProgress, milestoneState, WEEKDAY_SHORT, type Goal, type Milestone, type Task } from '@student-os/core';
 import { EditGoalForm, MilestoneForm } from '../components/goals/GoalForms';
 import { celebrate, CategoryTag, dueLabel, fmtDate, HealthPill, healthColor, MilestoneMarker, PriorityTag, ProgressRing, STATE_STYLE } from '../components/goals/visuals';
 import { BackButton, Button, Card, Checkbox, cn, EmptyState, Field, Input, Meter, Modal, Select, Spinner, Tabs, Textarea, Toggle } from '../components/ui';
@@ -148,7 +148,12 @@ export default function GoalDetail() {
           onAdd={() => setMilestoneForm({})}
         />
       )}
-      {view === 'tasks' && <TaskList s={s} today={today} />}
+      {view === 'tasks' && (
+        <>
+          <LinkedLectures goalId={goal.id} />
+          <TaskList s={s} today={today} />
+        </>
+      )}
       {view === 'notes' && <NotesPanel goal={goal} />}
 
       <Modal open={editing} onClose={() => setEditing(false)} title="Edit goal">
@@ -527,10 +532,16 @@ function MilestoneCard({
               <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: state === 'upcoming' ? 'var(--muted)' : style.color }}>
                 {style.label}
               </span>
-              {m.targetDate && (
+              {m.targetDate ? (
                 <span className={cn('text-xs', state === 'overdue' ? 'font-medium text-critical-ink' : 'text-muted')}>
-                  {state === 'done' ? (m.completedAt ? `Done ${fmtDate(m.completedAt.slice(0, 10))}` : fmtDate(m.targetDate)) : `${fmtDate(m.targetDate)} · ${dueLabel(m.targetDate, today)}`}
+                  {state === 'done'
+                    ? m.completedAt
+                      ? `Done ${fmtDate(m.completedAt.slice(0, 10))}`
+                      : fmtDate(m.targetDate)
+                    : `${m.startDate ? `${fmtDate(m.startDate)} → ` : ''}${fmtDate(m.targetDate)} · ${dueLabel(m.targetDate, today)}`}
                 </span>
+              ) : (
+                m.startDate && state !== 'done' && <span className="text-xs text-muted">{m.startDate > today ? `Starts ${fmtDate(m.startDate)}` : `From ${fmtDate(m.startDate)}`}</span>
               )}
             </div>
             <div className={cn('mt-0.5 font-medium leading-snug', state === 'done' && 'text-ink-2')}>{m.title}</div>
@@ -878,5 +889,37 @@ function DeleteGoal({ s, open, onClose, onDeleted }: { s: GoalSummary; open: boo
       </p>
       {openTasks > 0 && <Toggle checked={alsoTasks} onChange={setAlsoTasks} label={`Also delete ${openTasks} unfinished task${openTasks === 1 ? '' : 's'}`} description="Otherwise they stay in your task list without a goal." />}
     </Modal>
+  );
+}
+
+/** Weekly lectures and one-off classes mapped to this goal (AI Pilot can link them). */
+function LinkedLectures({ goalId }: { goalId: string }) {
+  const slots = (useAll('classSchedule') ?? []).filter((c) => c.goalId === goalId && c.active);
+  const extras = (useAll('classInstance') ?? []).filter((c) => c.goalId === goalId);
+  const subjects = useAll('subject') ?? [];
+  if (!slots.length && !extras.length) return null;
+  const name = (id: string) => subjects.find((x) => x.id === id)?.name ?? 'Class';
+  return (
+    <Card className="mb-3">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Lectures for this goal</div>
+      <ul className="divide-y divide-line text-sm">
+        {slots.map((c) => (
+          <li key={c.id} className="flex items-center gap-2 py-2">
+            <span className="min-w-0 flex-1 truncate font-medium">{name(c.subjectId)}</span>
+            <span className="shrink-0 text-xs text-ink-2 tabular">
+              Every {WEEKDAY_SHORT[c.weekday]} · {c.startTime}–{c.endTime}
+            </span>
+          </li>
+        ))}
+        {extras.map((c) => (
+          <li key={c.id} className="flex items-center gap-2 py-2">
+            <span className="min-w-0 flex-1 truncate font-medium">{name(c.subjectId)}</span>
+            <span className="shrink-0 text-xs text-ink-2 tabular">
+              {fmtDate(c.date)} · {c.startTime}–{c.endTime}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

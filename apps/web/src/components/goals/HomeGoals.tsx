@@ -16,6 +16,22 @@ export function HomeGoals() {
     .filter((s) => s.goal.status === 'active')
     .sort((a, b) => a.urgency - b.urgency);
 
+  if (!active.length && data.goals.length) {
+    // Goals exist but none is active (paused or achieved): point to the dashboard, not the new-goal form.
+    return (
+      <Card>
+        <SectionTitle action={<Link to="/goals" className="text-xs font-medium text-accent">All goals</Link>}>Goals</SectionTitle>
+        <Link to="/goals" className="flex items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+            <Mountain className="size-5" />
+          </span>
+          <p className="min-w-0 flex-1 text-sm text-ink-2">No active goals right now. Open your goals to resume one or see what you've achieved.</p>
+          <ArrowRight className="size-4 shrink-0 text-muted" />
+        </Link>
+      </Card>
+    );
+  }
+
   if (!active.length) {
     return (
       <Card>

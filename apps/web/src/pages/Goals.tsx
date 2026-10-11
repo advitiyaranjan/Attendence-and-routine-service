@@ -5,11 +5,11 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { ArrowRight, CalendarRange, Flag, Mountain, Plus, Target, Trophy } from 'lucide-react';
-import { goalCategory, milestoneState, type Goal, type Milestone } from '@student-os/core';
+import { goalCategory, milestoneProgress, milestoneState, type Goal, type Milestone } from '@student-os/core';
 import { GoalCalendar } from '../components/goals/GoalCalendar';
 import { NewGoalForm } from '../components/goals/GoalForms';
 import { CategoryTag, dueLabel, fmtDate, HealthPill, healthColor, PriorityTag, ProgressRing, STATE_STYLE } from '../components/goals/visuals';
-import { Button, Card, Chip, cn, EmptyState, isOverlayEntry, Modal, PageHeader, Select, Spinner, Tabs } from '../components/ui';
+import { Button, Card, Chip, cn, EmptyState, isOverlayEntry, Modal, PageHeader, SectionTitle, Select, Spinner, Tabs } from '../components/ui';
 import { summarizeAll, useGoalData, type GoalSummary } from '../lib/goals';
 import { useToday } from '../lib/hooks';
 
@@ -144,6 +144,8 @@ export default function Goals() {
             </Link>
           )}
 
+          <ActiveToday summaries={active} today={today} />
+
           <Tabs
             value={view}
             onChange={setView}
@@ -219,6 +221,38 @@ export default function Goals() {
   );
 }
 
+/** Every milestone active today across active goals: its start→end dates span today, or it is in progress. */
+function ActiveToday({ summaries, today }: { summaries: GoalSummary[]; today: string }) {
+  const rows = summaries.flatMap((s) => s.active.map((m) => ({ m, s })));
+  if (!rows.length) return null;
+  return (
+    <Card>
+      <SectionTitle>Active today · {rows.length}</SectionTitle>
+      <ul className="divide-y divide-line">
+        {rows.map(({ m, s }) => {
+          const p = milestoneProgress(m, s.tasks);
+          return (
+            <li key={m.id}>
+              <Link to={`/goals/${s.goal.id}?m=${m.id}`} className="flex items-center gap-3 py-2.5">
+                <span className="size-2.5 shrink-0 rounded-full motion-safe:animate-pulse" style={{ background: STATE_STYLE.active.color }} aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{m.title}</div>
+                  <div className="truncate text-xs text-muted">
+                    {s.goal.icon} {s.goal.title}
+                    {(m.startDate || m.targetDate) && ` · ${m.startDate ? fmtDate(m.startDate, true) : '…'} → ${m.targetDate ? fmtDate(m.targetDate, true) : '…'}`}
+                  </div>
+                </div>
+                <span className="shrink-0 text-xs text-ink-2 tabular">{p.tasksTotal ? `${p.tasksDone}/${p.tasksTotal} tasks` : `${Math.round(p.percent)}%`}</span>
+                {m.targetDate && <span className="hidden shrink-0 text-xs text-ink-2 sm:inline">{dueLabel(m.targetDate, today)}</span>}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 function lastTouched(s: GoalSummary) {
   return [s.goal.updatedAt, ...s.milestones.map((m) => m.updatedAt), ...s.tasks.map((t) => t.updatedAt)].sort().at(-1) ?? '';
 }
@@ -278,9 +312,20 @@ function GoalCard({ s, today }: { s: GoalSummary; today: string }) {
       <div className="min-w-0 text-sm">
         {goal.status === 'completed' ? (
           <span className="text-ink-2">Achieved{goal.completedAt ? ` on ${fmtDate(goal.completedAt.slice(0, 10), true)}` : ''} 🎉</span>
+        ) : s.active.length > 1 ? (
+          <div className="space-y-1">
+            {s.active.slice(0, 3).map((m) => (
+              <div key={m.id} className="flex items-center gap-2">
+                <span className="shrink-0 text-xs font-medium" style={{ color: STATE_STYLE.active.color }}>Active</span>
+                <span className="truncate font-medium">{m.title}</span>
+                {m.targetDate && <span className="ml-auto shrink-0 text-xs text-ink-2">{dueLabel(m.targetDate, today)}</span>}
+              </div>
+            ))}
+            {s.active.length > 3 && <div className="text-xs text-muted">+{s.active.length - 3} more active</div>}
+          </div>
         ) : current ? (
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-muted">Next</span>
+            <span className="shrink-0 text-xs" style={{ color: s.active[0]?.id === current.id ? STATE_STYLE.active.color : 'var(--muted)' }}>{s.active[0]?.id === current.id ? 'Active' : 'Next'}</span>
             <span className="truncate font-medium">{current.title}</span>
             {current.targetDate && <span className={cn('ml-auto shrink-0 text-xs', current.targetDate < today ? 'font-medium text-critical-ink' : 'text-ink-2')}>{dueLabel(current.targetDate, today)}</span>}
           </div>

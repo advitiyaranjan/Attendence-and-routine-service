@@ -18,6 +18,7 @@ import {
   type ClassOccurrence,
   awakeHours,
   byOrder,
+  activeMilestones,
   currentMilestone,
   goalHealth,
   goalProgress,
@@ -121,6 +122,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
       start: s.startTime,
       end: s.endTime,
       room: s.room,
+      ...(s.goalId ? { goalRef: refOf(REF.goal, s.goalId) } : {}),
     }));
     // Free time today (from now) and tomorrow, so scheduling never clashes.
     ctx.freeTime = [today, addDays(today, 1)].map((date) => ({
@@ -158,7 +160,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     const tasks = live(await db.entity('task').toArray());
     ctx.openTasks = rankTasks(tasks, today)
       .slice(0, 30)
-      .map((t) => ({ ref: refOf(REF.task, t.id), title: t.title, due: t.dueDate, dueTime: t.dueTime, priority: t.priority, estimatedMinutes: t.estimatedMinutes, subject: subjectName(t.subjectId), why: t.priorityScore.reasons.slice(1, 3) }));
+      .map((t) => ({ ref: refOf(REF.task, t.id), title: t.title, due: t.dueDate, dueTime: t.dueTime, priority: t.priority, estimatedMinutes: t.estimatedMinutes, subject: subjectName(t.subjectId), ...(t.goalId ? { goalRef: refOf(REF.goal, t.goalId) } : {}), why: t.priorityScore.reasons.slice(1, 3) }));
     ctx.completedToday = tasks.filter((t) => t.completedAt?.slice(0, 10) === today).map((t) => t.title);
     // Long-term goals (read-only for AI Pilot): progress and schedule status are pre-computed.
     const [goals, milestones] = await Promise.all([db.entity('goal').toArray(), db.entity('milestone').toArray()]);
@@ -170,6 +172,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
         const progress = goalProgress(g, ms, gt);
         const health = goalHealth(g, progress, ms, today);
         const current = currentMilestone(ms);
+        const active = activeMilestones(ms, today);
         return {
           ref: refOf(REF.goal, g.id),
           title: g.title,
@@ -181,7 +184,7 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
           schedule: health.label,
           why: health.reasons,
           currentMilestone: current ? { title: current.title, targetDate: current.targetDate } : null,
-          milestones: ms.map((m) => ({ ref: refOf(REF.milestone, m.id), title: m.title, status: m.status, targetDate: m.targetDate })),
+          milestones: ms.map((m) => ({ ref: refOf(REF.milestone, m.id), title: m.title, status: m.status, startDate: m.startDate, endDate: m.targetDate, activeToday: active.some((a) => a.id === m.id) })),
           openTasks: gt.filter((t) => t.status !== 'done').slice(0, 10).map((t) => ({ title: t.title, planned: t.plannedDate, due: t.dueDate })),
         };
       });

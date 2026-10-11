@@ -87,7 +87,7 @@ export function NewGoalForm({ onDone, initialTitle = '', initialCategory = 'care
   const suggest = () => {
     if (!template) return;
     const dates = spreadDates(template.length, startDate, targetDate || null);
-    setMilestones(template.map((t, i) => ({ title: t, targetDate: dates[i] ?? null })));
+    setMilestones(template.map((t, i) => ({ title: t, startDate: i === 0 ? startDate : dates[i - 1] ? addDays(dates[i - 1]!, 1) : null, targetDate: dates[i] ?? null })));
   };
   const setRow = (i: number, patch: Partial<MilestoneDraft>) => setMilestones((ms) => ms.map((m, k) => (k === i ? { ...m, ...patch } : m)));
 
@@ -169,7 +169,7 @@ export function NewGoalForm({ onDone, initialTitle = '', initialCategory = 'care
             </Button>
           )}
         </div>
-        <p className="mb-3 text-xs text-ink-2">The big stages between today and your goal. You can add tasks to each one later.{template && milestones.length === 0 ? ' Tap Suggest for a starting point you can edit.' : ''}</p>
+        <p className="mb-3 text-xs text-ink-2">The big stages between today and your goal, each with a start and end date. You can add tasks to each one later.{template && milestones.length === 0 ? ' Tap Suggest for a starting point you can edit.' : ''}</p>
         <ol className="space-y-2">
           {milestones.map((m, i) => (
             <li key={i} className="flex items-start gap-2 rounded-2xl border border-line p-2 sm:items-center sm:border-0 sm:p-0">
@@ -177,7 +177,11 @@ export function NewGoalForm({ onDone, initialTitle = '', initialCategory = 'care
               <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center">
                 <Input value={m.title} onChange={(e) => setRow(i, { title: e.target.value })} placeholder="Milestone" aria-label={`Milestone ${i + 1}`} maxLength={200} className="min-w-0 sm:flex-1" />
                 <div className="flex items-center gap-1.5">
-                  <Input type="date" value={m.targetDate ?? ''} onChange={(e) => setRow(i, { targetDate: e.target.value || null })} aria-label={`Milestone ${i + 1} date`} className="min-w-0 flex-1 px-2 sm:w-[9.5rem] sm:flex-none" />
+                  <Input type="date" value={m.startDate ?? ''} onChange={(e) => setRow(i, { startDate: e.target.value || null })} aria-label={`Milestone ${i + 1} start date`} title="Start" className="min-w-0 flex-1 px-2 sm:w-[9.5rem] sm:flex-none" />
+                  <span className="text-xs text-muted" aria-hidden>
+                    →
+                  </span>
+                  <Input type="date" value={m.targetDate ?? ''} min={m.startDate ?? undefined} onChange={(e) => setRow(i, { targetDate: e.target.value || null })} aria-label={`Milestone ${i + 1} end date`} title="End" className="min-w-0 flex-1 px-2 sm:w-[9.5rem] sm:flex-none" />
                   <Button size="icon" variant="ghost" className="size-9" aria-label={`Remove milestone ${i + 1}`} onClick={() => setMilestones((ms) => ms.filter((_, k) => k !== i))}>
                     <Trash2 className="size-4" />
                   </Button>
@@ -300,6 +304,7 @@ export function EditGoalForm({ goal, onDone }: { goal: Goal; onDone: () => void 
 export function MilestoneForm({ goal, initial, onDone }: { goal: Goal; initial?: Milestone; onDone: () => void }) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [startDate, setStartDate] = useState(initial?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(initial?.targetDate ?? '');
   const [priority, setPriority] = useState<TaskPriority>(initial?.priority ?? 'medium');
   const [status, setStatus] = useState<Milestone['status']>(initial?.status ?? 'todo');
@@ -307,15 +312,17 @@ export function MilestoneForm({ goal, initial, onDone }: { goal: Goal; initial?:
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [busy, setBusy] = useState(false);
   const afterGoal = targetDate && goal.targetDate && targetDate > goal.targetDate;
+  const dateError = startDate && targetDate && targetDate < startDate ? 'The end date is before the start date.' : null;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (busy || !title.trim()) return;
+    if (busy || !title.trim() || dateError) return;
     setBusy(true);
     try {
       const data = {
         title: title.trim(),
         description: description.trim() || null,
+        startDate: startDate || null,
         targetDate: targetDate || null,
         priority,
         status,
@@ -340,9 +347,15 @@ export function MilestoneForm({ goal, initial, onDone }: { goal: Goal; initial?:
         <Input autoFocus={!initial} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Finish 150 DSA problems" maxLength={200} required />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Target date">
-          <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+        <Field label="Start date">
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </Field>
+        <Field label="End date">
+          <Input type="date" value={targetDate} min={startDate || undefined} onChange={(e) => setTargetDate(e.target.value)} />
+        </Field>
+      </div>
+      {dateError && <p className="text-xs text-critical-ink">{dateError}</p>}
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Status">
           <Select value={status} onChange={(e) => setStatus(e.target.value as Milestone['status'])}>
             <option value="todo">Not started</option>
@@ -372,7 +385,7 @@ export function MilestoneForm({ goal, initial, onDone }: { goal: Goal; initial?:
         <Button type="button" variant="ghost" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" loading={busy} disabled={!title.trim()}>
+        <Button type="submit" variant="primary" loading={busy} disabled={!title.trim() || !!dateError}>
           {initial ? 'Save' : 'Add milestone'}
         </Button>
       </div>

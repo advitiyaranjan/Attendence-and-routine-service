@@ -495,6 +495,7 @@ const QUICK: Array<{ kind: string; label: string; icon: LucideIcon }> = [
 /** Command center: where the day stands (work done, streak, study time) and one-tap actions. */
 function Hero({ greeting, dateLabel, planLine, done, total, streak, studied, target }: { greeting: string; dateLabel: string; planLine: string; done: number; total: number; streak: number; studied: number; target: number }) {
   const openQuickAdd = useApp((s) => s.openQuickAdd);
+  const hasGoals = (useAll('goal')?.length ?? 0) > 0;
   const pct = total ? (done / total) * 100 : 0;
   return (
     <section className="relative overflow-hidden rounded-3xl border border-line bg-surface p-5 shadow-card sm:p-6">
@@ -528,15 +529,22 @@ function Hero({ greeting, dateLabel, planLine, done, total, streak, studied, tar
         </Link>
       </div>
       <div className="no-scrollbar relative -mx-5 mt-4 flex gap-2 overflow-x-auto px-5 sm:-mx-6 sm:px-6">
-        {QUICK.map(({ kind, label, icon: Icon }) => (
-          <button
-            key={kind}
-            onClick={() => openQuickAdd(kind)}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink active:scale-[0.98]"
-          >
-            <Icon className="size-4 text-accent" /> {label}
-          </button>
-        ))}
+        {QUICK.map(({ kind, label, icon: Icon }) =>
+          // Once there are goals, the chip opens the goals dashboard; adding one is a tap away there.
+          kind === 'goal' && hasGoals ? (
+            <Link key={kind} to="/goals" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink">
+              <Icon className="size-4 text-accent" /> Goals
+            </Link>
+          ) : (
+            <button
+              key={kind}
+              onClick={() => openQuickAdd(kind)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink active:scale-[0.98]"
+            >
+              <Icon className="size-4 text-accent" /> {label}
+            </button>
+          ),
+        )}
         <Link to="/attendance" className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface/80 px-3 text-sm font-medium text-ink-2 backdrop-blur-sm transition-colors hover:border-accent/40 hover:text-ink">
           <ChartPie className="size-4 text-accent" /> Attendance
         </Link>

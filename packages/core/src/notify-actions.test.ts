@@ -27,7 +27,7 @@ function data(patch: Partial<PlannerData> = {}): PlannerData {
   return {
     settings: settings(),
     subjects: [{ ...meta('os'), name: 'Operating Systems', code: null, faculty: null, credits: null, color: '#000', minAttendance: null, targetAttendance: null, active: true, compulsory: false, basketId: null }],
-    schedules: [{ ...meta('s1'), subjectId: 'os', weekday: 5, startTime: '10:00', endTime: '11:00', room: 'B-204', faculty: null, type: 'lecture', active: true, validFrom: null, validUntil: null }],
+    schedules: [{ ...meta('s1'), subjectId: 'os', weekday: 5, startTime: '10:00', endTime: '11:00', room: 'B-204', faculty: null, type: 'lecture', active: true, validFrom: null, validUntil: null, goalId: null }],
     instances: [],
     tasks: [],
     revisions: [],
@@ -65,7 +65,7 @@ describe('notification planner', () => {
   it('does not remind about cancelled classes or ask about already-marked ones', () => {
     const occId = instanceIdFor('s1', '2026-10-02');
     const inst = (status: 'cancelled' | 'present') => ({
-      ...meta(occId), scheduleId: 's1', subjectId: 'os', date: '2026-10-02', startTime: '10:00', endTime: '11:00', room: null, status, note: null, rescheduledToId: null, rescheduledFromId: null, isExtra: false,
+      ...meta(occId), scheduleId: 's1', subjectId: 'os', date: '2026-10-02', startTime: '10:00', endTime: '11:00', room: null, status, note: null, rescheduledToId: null, rescheduledFromId: null, isExtra: false, goalId: null,
     });
     expect(classes(dueNow(planNotifications(data({ instances: [inst('cancelled')] }), at(9 * 60 + 45)), at(9 * 60 + 45)))).toHaveLength(0);
     expect(classes(dueNow(planNotifications(data({ instances: [inst('present')] }), at(11 * 60 + 5)), at(11 * 60 + 5)))).toHaveLength(0);
@@ -123,7 +123,7 @@ describe('notification planner', () => {
 
   it('raises an attendance alert once per change in counts', () => {
     const mk = (date: string, status: 'present' | 'absent') => ({
-      ...meta(`${date}`), scheduleId: 's1', subjectId: 'os', date, startTime: '10:00', endTime: '11:00', room: null, status, note: null, rescheduledToId: null, rescheduledFromId: null, isExtra: false,
+      ...meta(`${date}`), scheduleId: 's1', subjectId: 'os', date, startTime: '10:00', endTime: '11:00', room: null, status, note: null, rescheduledToId: null, rescheduledFromId: null, isExtra: false, goalId: null,
     });
     // Fridays 11, 18, 25 Sep present; 2 Oct absent → 3/4 = 75%, can miss 0
     const instances = [mk('2026-09-11', 'present'), mk('2026-09-18', 'present'), mk('2026-09-25', 'present'), mk('2026-10-02', 'absent')];

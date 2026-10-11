@@ -173,6 +173,7 @@ model ClassSchedule {
   active     Boolean   @default(true)
   validFrom  String?
   validUntil String?
+  goalId     String?
 
   instances  ClassInstance[]
 
@@ -203,6 +204,7 @@ model ClassInstance {
   rescheduledToId   String?
   rescheduledFromId String?
   isExtra           Boolean        @default(false)
+  goalId            String?
 
   @@index([userId, updatedAt])
   @@index([userId, subjectId, date])
@@ -306,6 +308,7 @@ model Milestone {
   goalId         String
   title          String
   description    String?
+  startDate      String?
   targetDate     String?
   status         String
   priority       String

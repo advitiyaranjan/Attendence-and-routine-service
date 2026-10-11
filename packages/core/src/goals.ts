@@ -119,12 +119,25 @@ export function currentMilestone(milestones: readonly Milestone[]): Milestone | 
 
 export type MilestoneState = 'done' | 'active' | 'upcoming' | 'overdue' | 'blocked';
 
+/** Today falls within the milestone's start → end dates (an open start or end counts as reached). */
+export function milestoneInWindow(m: Milestone, today: ISODate): boolean {
+  return !!m.startDate && m.startDate <= today && (!m.targetDate || today <= m.targetDate);
+}
+
 export function milestoneState(m: Milestone, today: ISODate, currentId: string | null): MilestoneState {
   if (m.status === 'done') return 'done';
   if (m.status === 'blocked') return 'blocked';
   if (m.targetDate && m.targetDate < today) return 'overdue';
-  if (m.id === currentId || m.status === 'in_progress') return 'active';
+  if (m.status === 'in_progress' || milestoneInWindow(m, today)) return 'active';
+  // The current stage counts as active unless it is scheduled to start later.
+  if (m.id === currentId && !(m.startDate && m.startDate > today)) return 'active';
   return 'upcoming';
+}
+
+/** Every milestone that is active on `today` (its dates span today, it is in progress, or it is the current stage). */
+export function activeMilestones(milestones: readonly Milestone[], today: ISODate): Milestone[] {
+  const current = currentMilestone(milestones);
+  return byOrder(milestones.filter((m) => milestoneState(m, today, current?.id ?? null) === 'active'));
 }
 
 export type GoalHealthLevel = 'completed' | 'paused' | 'on_track' | 'attention' | 'behind' | 'overdue' | 'no_deadline';
