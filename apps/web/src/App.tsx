@@ -34,6 +34,8 @@ const Search = lazy(() => import('./pages/Search'));
 const Notifications = lazy(() => import('./pages/Notifications'));
 const Reminders = lazy(() => import('./pages/Reminders'));
 const AIActivity = lazy(() => import('./pages/AIActivity'));
+const Goals = lazy(() => import('./pages/Goals'));
+const GoalDetail = lazy(() => import('./pages/GoalDetail'));
 
 /**
  * Notification quick actions reaching the page:
@@ -153,6 +155,8 @@ export function App() {
           <Route path="notifications" element={<Notifications />} />
           <Route path="reminders" element={<Reminders />} />
           <Route path="ai-activity" element={<AIActivity />} />
+          <Route path="goals" element={<Goals />} />
+          <Route path="goals/:id" element={<GoalDetail />} />
           <Route path="more" element={<MorePage />} />
           <Route path="*" element={<Dashboard />} />
         </Route>

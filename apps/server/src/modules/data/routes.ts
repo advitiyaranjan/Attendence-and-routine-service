@@ -20,6 +20,8 @@ const COLLECTIONS: Record<string, Exclude<EntityName, 'settings'>> = {
   'class-instances': 'classInstance',
   attendance: 'attendanceRecord',
   tasks: 'task',
+  goals: 'goal',
+  milestones: 'milestone',
   calendar: 'calendarEvent',
   'study-sessions': 'studySession',
   topics: 'topic',

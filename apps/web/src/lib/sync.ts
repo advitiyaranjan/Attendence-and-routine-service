@@ -70,6 +70,7 @@ async function applyResponse(res: SyncResponse, ops: SyncOperation[], seqs: numb
   let conflicts = 0;
   const failed: Array<{ entity: EntityName; id: string; error: string }> = [];
 
+  const tableNames = new Set(db.tables.map((t) => t.name));
   await db.transaction('rw', db.tables, async () => {
     if (seqs.length) await db.outbox.bulkDelete(seqs);
 
@@ -93,6 +94,8 @@ async function applyResponse(res: SyncResponse, ops: SyncOperation[], seqs: numb
       const id = record.id as string;
       const pending = (await db.outbox.where('entityId').equals(id).count()) > 0;
       if (pending) continue;
+      // A record type from a newer app version: skip it rather than fail the whole sync.
+      if (!tableNames.has(entity)) continue;
       await db.entity(entity).put({ ...record, syncStatus: 'synced' } as never);
     }
     if (res.cursor) await db.kv.put({ key: CURSOR_KEY, value: res.cursor });

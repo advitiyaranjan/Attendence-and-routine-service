@@ -25,7 +25,8 @@ import { UpNext, upNextItems } from '../components/UpNext';
 import { Button, Card, Checkbox, cn, Meter, Modal, SectionTitle, SubjectDot, riskColor } from '../components/ui';
 import { completeRevision } from '../lib/actions';
 import { useAll, useAttendance, useNow, useOccurrences, useSettings, useSubjectMap, useToday } from '../lib/hooks';
-import { copiesOf, normTitle, scheduledKeys, selfStudyMinutes, taskDay } from '../lib/plan';
+import { copiesOf, isRoadmapBacklog, normTitle, scheduledKeys, selfStudyMinutes, taskDay } from '../lib/plan';
+import { HomeGoals } from '../components/goals/HomeGoals';
 import { toast } from '../lib/store';
 import { RatingButtons } from './Revision';
 
@@ -66,7 +67,7 @@ export function Dashboard() {
   const priorities = rankTasks(
     tasks.filter((t) => {
       const day = taskDay(t);
-      return (!day || day <= today) && !scheduled.has(normTitle(t.title));
+      return (!day || day <= today) && !isRoadmapBacklog(t) && !scheduled.has(normTitle(t.title));
     }),
     today,
   ).slice(0, 3);
@@ -262,6 +263,10 @@ export function Dashboard() {
               </ul>
             )}
           </Card>
+          </Slot>
+
+          <Slot k="goals">
+            <HomeGoals />
           </Slot>
 
           <Slot k="schedule">

@@ -144,6 +144,10 @@ export const taskSchema = syncMeta.extend({
   completedAt: isoDateTime.nullable().default(null),
   dependsOn: z.array(z.string()).default([]),
   source: z.enum(['manual', 'ai']).default('manual'),
+  /** Long-term goal this task works towards (see goalSchema). */
+  goalId: z.string().max(64).nullable().default(null),
+  /** Milestone of that goal this task belongs to. Its goalId is the milestone's goal. */
+  milestoneId: z.string().max(64).nullable().default(null),
 });
 export type Task = z.infer<typeof taskSchema>;
 
@@ -169,6 +173,8 @@ export const studySessionSchema = syncMeta.extend({
   date: isoDate,
   durationMinutes: z.number().int().min(1).max(1440),
   notes: optText(2000),
+  /** Long-term goal this study time counted towards. */
+  goalId: z.string().max(64).nullable().default(null),
 });
 export type StudySession = z.infer<typeof studySessionSchema>;
 
@@ -187,6 +193,58 @@ export const topicSchema = syncMeta.extend({
   notes: optText(5000),
 });
 export type Topic = z.infer<typeof topicSchema>;
+
+export const goalStatus = z.enum(['active', 'paused', 'completed']);
+export type GoalStatus = z.infer<typeof goalStatus>;
+
+/**
+ * A long-term goal ("Land a software internship", "Clear GATE"). Broken into ordered
+ * milestones, which hold everyday tasks. Progress is derived from those (see goals.ts)
+ * unless progressMode is 'manual', for goals a checklist can't measure.
+ */
+export const goalSchema = syncMeta.extend({
+  title: z.string().min(1).max(200),
+  description: optText(5000),
+  /** A built-in category key (see GOAL_CATEGORIES) or the student's own label. */
+  category: z.string().min(1).max(50).default('career'),
+  icon: z.string().max(10).default('🎯'),
+  color: z.string().max(20).default('#6366f1'),
+  priority: taskPriority.default('medium'),
+  status: goalStatus.default('active'),
+  startDate: isoDate,
+  /** Missing a target date never fails the goal; it shows as overdue until rescheduled. */
+  targetDate: isoDate.nullable().default(null),
+  progressMode: z.enum(['auto', 'manual']).default('auto'),
+  /** Used only when progressMode is 'manual'. */
+  manualProgress: percent.default(0),
+  notes: optText(10_000),
+  resources: z
+    .array(z.object({ title: z.string().min(1).max(200), url: z.string().max(1000).nullable().default(null) }))
+    .max(50)
+    .default([]),
+  completedAt: isoDateTime.nullable().default(null),
+  order: z.number().int().min(0).default(0),
+});
+export type Goal = z.infer<typeof goalSchema>;
+
+export const milestoneStatus = z.enum(['todo', 'in_progress', 'blocked', 'done']);
+export type MilestoneStatus = z.infer<typeof milestoneStatus>;
+
+/** One stage on a goal's roadmap. Ordered by `order`; can be completed out of order. */
+export const milestoneSchema = syncMeta.extend({
+  goalId: z.string().min(1).max(64),
+  title: z.string().min(1).max(200),
+  description: optText(5000),
+  targetDate: isoDate.nullable().default(null),
+  status: milestoneStatus.default('todo'),
+  priority: taskPriority.default('medium'),
+  /** Progress for a milestone with no tasks; ignored once it has tasks. */
+  manualProgress: percent.nullable().default(null),
+  notes: optText(5000),
+  completedAt: isoDateTime.nullable().default(null),
+  order: z.number().int().min(0).default(0),
+});
+export type Milestone = z.infer<typeof milestoneSchema>;
 
 export const recallRating = z.enum(['forgot', 'partial', 'remembered', 'easy']);
 export type RecallRating = z.infer<typeof recallRating>;
@@ -430,10 +488,10 @@ export const aiActionLogSchema = syncMeta.extend({
 export type AIActionLog = z.infer<typeof aiActionLogSchema>;
 
 /** Home screen cards, in their default order. "upNext" is the swipeable next-class/task card. */
-export const HOME_SECTIONS = ['upNext', 'overview', 'markAttendance', 'priorities', 'schedule', 'attendance', 'revision', 'comingUp', 'thisWeek', 'aiPilot'] as const;
+export const HOME_SECTIONS = ['upNext', 'overview', 'markAttendance', 'priorities', 'goals', 'schedule', 'attendance', 'revision', 'comingUp', 'thisWeek', 'aiPilot'] as const;
 export type HomeSection = (typeof HOME_SECTIONS)[number];
 /** Pages a student can hide from the menu or open the app on. */
-export const APP_PAGES = ['home', 'assistant', 'todos', 'calendar', 'revision', 'attendance', 'subjects', 'notes', 'deadlines', 'analytics', 'classes', 'tasks', 'reminders', 'review', 'ai-activity'] as const;
+export const APP_PAGES = ['home', 'assistant', 'todos', 'calendar', 'revision', 'attendance', 'subjects', 'notes', 'deadlines', 'analytics', 'classes', 'tasks', 'reminders', 'review', 'ai-activity', 'goals'] as const;
 export type AppPage = (typeof APP_PAGES)[number];
 
 /** How the app itself behaves: layout and features the student (or AI Pilot) can switch around. */
@@ -510,6 +568,8 @@ export const ENTITY_SCHEMAS = {
   attendanceRecord: attendanceRecordSchema,
   topic: topicSchema,
   revisionSchedule: revisionScheduleSchema,
+  goal: goalSchema,
+  milestone: milestoneSchema,
   task: taskSchema,
   calendarEvent: calendarEventSchema,
   studySession: studySessionSchema,

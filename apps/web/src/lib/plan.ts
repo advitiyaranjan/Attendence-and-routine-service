@@ -18,6 +18,12 @@ export const normTitle = (s: string) =>
 /** A task's day on the plan: planned date first, then deadline. */
 export const taskDay = (t: Task): ISODate | null => t.plannedDate ?? t.dueDate;
 
+/**
+ * A goal's task with no date yet. It lives on its roadmap until it is planned, so a
+ * long-term backlog never floods the daily lists.
+ */
+export const isRoadmapBacklog = (t: Task): boolean => !!(t.goalId || t.milestoneId) && !taskDay(t);
+
 export interface PlanData {
   tasks: Task[];
   revisions: RevisionSchedule[];

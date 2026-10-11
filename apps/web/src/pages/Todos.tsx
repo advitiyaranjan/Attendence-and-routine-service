@@ -14,7 +14,7 @@ import { ClassRow } from '../components/ClassRow';
 import { complete, completeTarget, FeedbackButton, type FeedbackTarget } from '../components/ItemFeedback';
 import { Card, Checkbox, Chip, cn, EmptyState, Modal, PageHeader, SubjectDot, Tabs } from '../components/ui';
 import { completeRevision } from '../lib/actions';
-import { normTitle } from '../lib/plan';
+import { isRoadmapBacklog, normTitle } from '../lib/plan';
 import { useAll, useOccurrences, useSubjectMap, useToday } from '../lib/hooks';
 import { create, update } from '../lib/repo';
 import { toast } from '../lib/store';
@@ -82,7 +82,9 @@ export default function Todos() {
   const classes = useOccurrences(today, today) ?? [];
   // Lectures for the Upcoming tab (next two weeks).
   const classesAhead = useOccurrences(addDays(today, 1), addDays(today, 14)) ?? [];
-  const tasks = useAll('task') ?? [];
+  // A goal's tasks join the daily list once they have a date (see isRoadmapBacklog).
+  const tasks = (useAll('task') ?? []).filter((t) => !isRoadmapBacklog(t));
+  const goals = new Map((useAll('goal') ?? []).map((g) => [g.id, g]));
   const revisions = useAll('revisionSchedule') ?? [];
   const topics = useAll('topic') ?? [];
   const assignments = useAll('assignment') ?? [];
@@ -211,6 +213,11 @@ export default function Todos() {
               </span>
             )}
             {i.meta && <span>{i.meta}</span>}
+            {i.task?.goalId && goals.get(i.task.goalId) && (
+              <Link to={`/goals/${i.task.goalId}${i.task.milestoneId ? `?m=${i.task.milestoneId}` : ''}`} className="inline-flex max-w-[12rem] items-center gap-1 truncate rounded-full bg-accent-soft px-1.5 text-accent hover:underline">
+                {goals.get(i.task.goalId)!.icon} <span className="truncate">{goals.get(i.task.goalId)!.title}</span>
+              </Link>
+            )}
             {i.kind === 'exam' && <span>Exam</span>}
             {(showDate || late) && i.date && <span className={cn(late && 'font-medium text-critical-ink')}>{late ? `${dayLabel(i.date, today)} · overdue` : dayLabel(i.date, today)}</span>}
             {i.time && <span>{formatTime12(i.time)}</span>}

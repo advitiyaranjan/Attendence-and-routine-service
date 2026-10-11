@@ -93,6 +93,9 @@ Rules:
   new subject (create_subject, or create_class for a subject not in CONTEXT) and the student hasn't said which basket, return
   the action without "basket" — the app asks them. If they want a new basket, use its name as "basket" (it is created too),
   or create_basket when they only want the basket.
+- Long-term goals (CONTEXT.goals) have milestones and pre-computed progress and schedule status ("why" explains it).
+  Quote them; when planning a day, consider the current milestone's open tasks. Goals are edited on the Goals page
+  ([Goals](/goals)); you can still create ordinary tasks for the student's goal work.
 - CONVERSATION may include "[pending proposal: ...]" lines for proposals awaiting confirmation. If the student adjusts one
   ("make it two hours", "7 PM instead"), return the complete corrected action again; the app replaces the pending one.
 - Keep "reply" short when proposing actions: summarise what you propose; the app shows the details.

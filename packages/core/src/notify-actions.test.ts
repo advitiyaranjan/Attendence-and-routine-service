@@ -79,7 +79,7 @@ describe('notification planner', () => {
   it('reminds about tasks, assignments and exams at their offsets', () => {
     const planned = planNotifications(
       data({
-        tasks: [{ ...meta('t1'), title: 'DBMS Assignment', notes: null, category: 'Study', priority: 'high', importance: 3, dueDate: '2026-10-02', dueTime: '20:00', plannedDate: null, estimatedMinutes: null, subjectId: null, status: 'todo', completedAt: null, dependsOn: [], source: 'manual' }],
+        tasks: [{ ...meta('t1'), title: 'DBMS Assignment', notes: null, category: 'Study', priority: 'high', importance: 3, dueDate: '2026-10-02', dueTime: '20:00', plannedDate: null, estimatedMinutes: null, subjectId: null, status: 'todo', completedAt: null, dependsOn: [], source: 'manual', goalId: null, milestoneId: null }],
         exams: [{ ...meta('x1'), subjectId: null, title: 'DBMS Mid-Sem', kind: 'midsem', date: '2026-10-09', startTime: '10:00', room: null, topics: null, notes: null }],
         assignments: [{ ...meta('a1'), subjectId: 'os', title: 'OS Assignment', description: null, deadline: '2026-10-03', deadlineTime: '23:59', priority: 'medium', estimatedMinutes: null, status: 'todo' }],
       }),

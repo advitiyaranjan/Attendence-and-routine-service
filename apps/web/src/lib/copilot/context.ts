@@ -17,6 +17,11 @@ import {
   WEEKDAYS,
   type ClassOccurrence,
   awakeHours,
+  byOrder,
+  currentMilestone,
+  goalHealth,
+  goalProgress,
+  goalTasks,
 } from '@student-os/core';
 import { db } from '../db';
 import { computeAttendance, loadSettings, occurrencesBetween } from '../queries';
@@ -155,6 +160,30 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
       .slice(0, 30)
       .map((t) => ({ ref: refOf(REF.task, t.id), title: t.title, due: t.dueDate, dueTime: t.dueTime, priority: t.priority, estimatedMinutes: t.estimatedMinutes, subject: subjectName(t.subjectId), why: t.priorityScore.reasons.slice(1, 3) }));
     ctx.completedToday = tasks.filter((t) => t.completedAt?.slice(0, 10) === today).map((t) => t.title);
+    // Long-term goals (read-only for AI Pilot): progress and schedule status are pre-computed.
+    const [goals, milestones] = await Promise.all([db.entity('goal').toArray(), db.entity('milestone').toArray()]);
+    ctx.goals = live(goals)
+      .filter((g) => g.status !== 'completed')
+      .map((g) => {
+        const ms = byOrder(live(milestones).filter((m) => m.goalId === g.id));
+        const gt = goalTasks(g, ms, tasks);
+        const progress = goalProgress(g, ms, gt);
+        const health = goalHealth(g, progress, ms, today);
+        const current = currentMilestone(ms);
+        return {
+          title: g.title,
+          category: g.category,
+          status: g.status,
+          priority: g.priority,
+          targetDate: g.targetDate,
+          progressPercent: Math.round(progress.percent),
+          schedule: health.label,
+          why: health.reasons,
+          currentMilestone: current ? { title: current.title, targetDate: current.targetDate } : null,
+          milestones: ms.map((m) => ({ title: m.title, status: m.status, targetDate: m.targetDate })),
+          openTasks: gt.filter((t) => t.status !== 'done').slice(0, 10).map((t) => ({ title: t.title, planned: t.plannedDate, due: t.dueDate })),
+        };
+      });
     const assignments = live(await db.entity('assignment').toArray()).filter((a) => a.status !== 'submitted');
     ctx.assignments = assignments.map((a) => ({ ref: refOf(REF.assignment, a.id), title: a.title, deadline: a.deadline, deadlineTime: a.deadlineTime, subject: subjectName(a.subjectId), status: a.status }));
   }

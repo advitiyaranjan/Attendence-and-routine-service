@@ -2,6 +2,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import {
   addDays,
+  byOrder,
   formatMinutes,
   initialRevisions,
   overlapsSleep,
@@ -82,6 +83,40 @@ export function BasketSelect({ value, onChange }: { value: string; onChange: (v:
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 
+/** Links a task to a long-term goal and, optionally, one of its milestones. Hidden when there are no goals. */
+export function GoalLinkFields({ goalId, milestoneId, onChange, withMilestone = true }: { goalId: string | null; milestoneId: string | null; onChange: (goalId: string | null, milestoneId: string | null) => void; withMilestone?: boolean }) {
+  const goals = (useAll('goal') ?? []).filter((g) => g.status !== 'completed' || g.id === goalId);
+  const milestones = byOrder((useAll('milestone') ?? []).filter((m) => m.goalId === goalId));
+  if (!goals.length) return null;
+  return (
+    <div className={withMilestone && goalId && milestones.length ? 'grid grid-cols-2 gap-3' : undefined}>
+      <Field label="Goal" hint={withMilestone ? 'Counts towards its progress' : undefined}>
+        <Select value={goalId ?? ''} onChange={(e) => onChange(e.target.value || null, null)}>
+          <option value="">No goal</option>
+          {goals.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.icon} {g.title}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {withMilestone && goalId && milestones.length > 0 && (
+        <Field label="Milestone">
+          <Select value={milestoneId ?? ''} onChange={(e) => onChange(goalId, e.target.value || null)}>
+            <option value="">Whole goal</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.status === 'done' ? '✓ ' : ''}
+                {m.title}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+    </div>
+  );
+}
+
 export function TaskForm({ initial, onDone, defaultDate }: { initial?: Task; onDone: () => void; defaultDate?: string }) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [category, setCategory] = useState(initial?.category ?? 'Study');
@@ -94,6 +129,7 @@ export function TaskForm({ initial, onDone, defaultDate }: { initial?: Task; onD
   const [subjectId, setSubjectId] = useState<string | null>(initial?.subjectId ?? null);
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? []);
+  const [goalLink, setGoalLink] = useState({ goalId: initial?.goalId ?? null, milestoneId: initial?.milestoneId ?? null });
   const tasks = (useAll('task') ?? []).filter((t) => t.id !== initial?.id && t.status !== 'done');
 
   return (
@@ -114,6 +150,7 @@ export function TaskForm({ initial, onDone, defaultDate }: { initial?: Task; onD
           subjectId,
           notes: notes || null,
           dependsOn,
+          ...goalLink,
         };
         if (initial) await update('task', initial.id, data);
         else await create('task', data);
@@ -169,6 +206,7 @@ export function TaskForm({ initial, onDone, defaultDate }: { initial?: Task; onD
       <Field label="Subject">
         <SubjectSelect value={subjectId} onChange={setSubjectId} />
       </Field>
+      <GoalLinkFields goalId={goalLink.goalId} milestoneId={goalLink.milestoneId} onChange={(goalId, milestoneId) => setGoalLink({ goalId, milestoneId })} />
       {tasks.length > 0 && (
         <Field label="Depends on" hint="This task is ranked lower until these are done.">
           <Select
@@ -427,13 +465,14 @@ export function StudyLogForm({ onDone }: { onDone: () => void }) {
   const [date, setDate] = useState(todayISO());
   const [minutes, setMinutes] = useState('60');
   const [notes, setNotes] = useState('');
+  const [goalId, setGoalId] = useState<string | null>(null);
   return (
     <FormShell
       submitLabel="Log study time"
       onCancel={onDone}
       disabled={!Number(minutes)}
       onSubmit={async () => {
-        await create('studySession', { subjectId, date, durationMinutes: Number(minutes), notes: notes || null });
+        await create('studySession', { subjectId, date, durationMinutes: Number(minutes), notes: notes || null, goalId });
         toast(`Logged ${formatMinutes(Number(minutes))}`, 'success');
         onDone();
       }}
@@ -449,6 +488,7 @@ export function StudyLogForm({ onDone }: { onDone: () => void }) {
       <Field label="Minutes studied">
         <Input type="number" min={1} max={1440} step={5} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
       </Field>
+      <GoalLinkFields goalId={goalId} milestoneId={null} onChange={(g) => setGoalId(g)} withMilestone={false} />
       <Field label="What did you work on?">
         <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
       </Field>

@@ -6,6 +6,7 @@ export const HOME_SECTION_LABEL: Record<HomeSection, string> = {
   overview: 'Overview stats',
   markAttendance: 'Did you attend?',
   priorities: "Today's priorities",
+  goals: 'Goals',
   schedule: "Today's schedule",
   attendance: 'Attendance',
   revision: 'Revision',
@@ -30,6 +31,7 @@ export const PAGE_PATH: Record<AppPage, string> = {
   reminders: '/reminders',
   review: '/review',
   'ai-activity': '/ai-activity',
+  goals: '/goals',
 };
 
 export const PAGE_LABEL: Record<AppPage, string> = {
@@ -48,6 +50,7 @@ export const PAGE_LABEL: Record<AppPage, string> = {
   reminders: 'Reminders',
   review: 'Daily review',
   'ai-activity': 'AI activity',
+  goals: 'Goals',
 };
 
 /** Always in the menu, so AI Pilot (and Settings) can't be lost. */

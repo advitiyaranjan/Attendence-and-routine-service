@@ -85,6 +85,11 @@ class StudentDB extends Dexie {
       basket: 'id',
       subject: 'id, basketId',
     });
+    this.version(4).stores({
+      goal: 'id, status',
+      milestone: 'id, goalId',
+      task: 'id, status, dueDate, plannedDate, goalId, milestoneId',
+    });
   }
 
   entity<E extends EntityName>(name: E): EntityTables[E] {

@@ -23,6 +23,7 @@ import {
   ListChecks,
   Loader2,
   LogOut,
+  Mountain,
   NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -47,6 +48,8 @@ import { useCopilot } from '../lib/copilot/store';
 import { NotificationRow, useUnreadCount } from '../pages/Notifications';
 import { ReminderForm } from '../pages/Reminders';
 import { CopilotPanel } from './copilot/CopilotChat';
+import { CelebrationLayer } from './goals/visuals';
+import { NewGoalForm } from './goals/GoalForms';
 import { useApp } from '../lib/store';
 import { syncNow } from '../lib/sync';
 import { AssignmentForm, EventForm, ExamForm, ExtraClassForm, NoteForm, ScheduleForm, StudyLogForm, TaskForm, TopicForm } from './forms';
@@ -66,6 +69,7 @@ export const NAV: NavItem[] = [
   { to: '/assistant', label: 'AI Pilot', icon: Bot, key: 'g i' },
   { to: '/todos', label: 'Todos', icon: ListChecks, key: 'g t' },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, key: 'g c' },
+  { to: '/goals', label: 'Goals', icon: Mountain, key: 'g g' },
   { to: '/revision', label: 'Revision', icon: Repeat, key: 'g r' },
   { to: '/attendance', label: 'Attendance', icon: ChartPie, key: 'g a' },
   { to: '/subjects', label: 'Subjects', icon: BookOpen, key: 'g s' },
@@ -291,13 +295,9 @@ function ProfileMenu() {
           </div>
           <SyncBadge />
         </div>
-        <div className="grid grid-cols-3 gap-2 border-b border-line p-3 md:hidden">
-          {shown([...NAV.slice(4), ...NAV_MORE]).map(({ to, label, icon: Icon }) => (
-            <button key={to} onClick={() => go(to)} className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface-2 px-1 py-3 text-xs text-ink-2 active:scale-[0.98]">
-              <Icon className="size-5 text-accent" />
-              {label}
-            </button>
-          ))}
+        <div className="border-b border-line px-2 pb-2 md:hidden">
+          <SheetNavGroup title="Sections" items={shown(NAV.filter((n) => !MOBILE_NAV.some((m) => m.to === n.to)))} go={go} />
+          <SheetNavGroup title="More" items={shown(NAV_MORE)} go={go} />
         </div>
         <div className="p-2">
           <MenuRow icon={SettingsIcon} onClick={() => go('/settings')}>
@@ -323,6 +323,33 @@ function ProfileMenu() {
   );
 }
 
+/** The sidebar's sections, as a labelled list in the phone profile sheet. */
+function SheetNavGroup({ title, items, go }: { title: string; items: NavItem[]; go: (to: string) => void }) {
+  const { pathname } = useLocation();
+  if (!items.length) return null;
+  return (
+    <>
+      <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</div>
+      <div className="grid grid-cols-2 gap-0.5">
+        {items.map(({ to, label, icon: Icon }) => {
+          const active = pathname === to || pathname.startsWith(`${to}/`);
+          return (
+            <button
+              key={to}
+              onClick={() => go(to)}
+              aria-current={active ? 'page' : undefined}
+              className={cn('flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm', active ? 'bg-accent-soft font-medium text-ink' : 'text-ink-2 hover:bg-surface-2')}
+            >
+              <Icon className={cn('size-[18px] shrink-0', active ? 'text-accent' : 'text-ink-2')} />
+              <span className="truncate">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function MenuRow({ icon: Icon, onClick, children }: { icon: LucideIcon; onClick: () => void; children: ReactNode }) {
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-surface-2">
@@ -333,6 +360,7 @@ function MenuRow({ icon: Icon, onClick, children }: { icon: LucideIcon; onClick:
 
 const QUICK_ACTIONS: Array<{ kind: string; label: string; icon: LucideIcon }> = [
   { kind: 'task', label: 'Task', icon: CheckSquare },
+  { kind: 'goal', label: 'Goal', icon: Mountain },
   { kind: 'class', label: 'Class', icon: CalendarClock },
   { kind: 'event', label: 'Event', icon: CalendarPlus },
   { kind: 'topic', label: 'Topic learned', icon: Repeat },
@@ -347,6 +375,7 @@ const QUICK_ACTIONS: Array<{ kind: string; label: string; icon: LucideIcon }> = 
 
 const QUICK_TITLES: Record<string, string> = {
   task: 'New task',
+  goal: 'New goal',
   class: 'Extra class',
   event: 'New event',
   topic: 'Topic learned',
@@ -423,6 +452,14 @@ function QuickAdd() {
 
       <Modal open={!!quickAdd} onClose={close} title={quickAdd ? (QUICK_TITLES[quickAdd] ?? 'Add') : ''}>
         {quickAdd === 'task' && <TaskForm onDone={close} />}
+        {quickAdd === 'goal' && (
+          <NewGoalForm
+            onDone={(g) => {
+              close();
+              if (g) navigate(`/goals/${g.id}`, { replace: isOverlayEntry() });
+            }}
+          />
+        )}
         {quickAdd === 'reminder' && <ReminderForm onDone={close} />}
         {quickAdd === 'topic' && <TopicForm onDone={close} />}
         {quickAdd === 'study' && <EventForm onDone={close} defaultType="study" />}
@@ -671,6 +708,7 @@ export function Layout() {
 
       <QuickAdd />
       <CopilotPanel />
+      <CelebrationLayer />
       <Toasts />
     </div>
   );

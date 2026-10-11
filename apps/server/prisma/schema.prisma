@@ -37,6 +37,8 @@ model User {
   classInstances    ClassInstance[]
   attendanceRecords AttendanceRecord[]
   tasks             Task[]
+  goals             Goal[]
+  milestones        Milestone[]
   calendarEvents    CalendarEvent[]
   studySessions     StudySession[]
   topics            Topic[]
@@ -254,9 +256,66 @@ model Task {
   completedAt      DateTime?
   dependsOn        Json      @default("[]")
   source           String    @default("manual")
+  goalId           String?
+  milestoneId      String?
 
   @@index([userId, updatedAt])
   @@index([userId, dueDate])
+}
+
+/// A long-term goal; progress is derived from its milestones and tasks on the client.
+model Goal {
+  id             String    @id
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime
+  updatedAt      DateTime
+  deletedAt      DateTime?
+  version        Int       @default(1)
+  deviceId       String
+
+  title          String
+  description    String?
+  category       String
+  icon           String    @default("🎯")
+  color          String
+  priority       String
+  status         String
+  startDate      String
+  targetDate     String?
+  progressMode   String    @default("auto")
+  manualProgress Float     @default(0)
+  notes          String?
+  resources      Json      @default("[]")
+  completedAt    DateTime?
+  order          Int       @default(0)
+
+  @@index([userId, updatedAt])
+}
+
+model Milestone {
+  id             String    @id
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime
+  updatedAt      DateTime
+  deletedAt      DateTime?
+  version        Int       @default(1)
+  deviceId       String
+
+  goalId         String
+  title          String
+  description    String?
+  targetDate     String?
+  status         String
+  priority       String
+  manualProgress Float?
+  notes          String?
+  completedAt    DateTime?
+  order          Int       @default(0)
+
+  @@index([userId, updatedAt])
+  @@index([userId, goalId])
 }
 
 model CalendarEvent {
@@ -298,6 +357,7 @@ model StudySession {
   date            String
   durationMinutes Int
   notes           String?
+  goalId          String?
 
   @@index([userId, updatedAt])
   @@index([userId, date])
