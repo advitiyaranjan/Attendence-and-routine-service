@@ -81,10 +81,15 @@ export interface MilestoneDraft {
   targetDate: string | null;
 }
 
-/** A milestone with no start date begins the day after the previous one ends (or when the goal starts). */
-function defaultStart(prevEnd: string | null | undefined, goalStart: string, end: string | null): string {
-  const start = prevEnd ? addDays(prevEnd, 1) : goalStart;
-  return end && start > end ? end : start;
+/**
+ * A dated milestone with no start date begins the day after the previous one ends (or when the goal
+ * starts, for the first). Undated milestones, or ones after an undated milestone, get no start.
+ */
+function defaultStart(prev: { targetDate: string | null } | undefined, goalStart: string, end: string | null): string | null {
+  if (!end) return null;
+  if (prev && !prev.targetDate) return null;
+  const start = prev ? addDays(prev.targetDate!, 1) : goalStart;
+  return start > end ? end : start;
 }
 
 export async function createGoal(data: NewRecord<'goal'>, milestones: MilestoneDraft[]): Promise<Goal> {
@@ -95,7 +100,7 @@ export async function createGoal(data: NewRecord<'goal'>, milestones: MilestoneD
   if (clean.length) {
     await createMany(
       'milestone',
-      clean.map((m, i) => ({ goalId: goal.id, title: m.title.trim(), startDate: m.startDate || defaultStart(clean[i - 1]?.targetDate, goal.startDate, m.targetDate), targetDate: m.targetDate, order: i })),
+      clean.map((m, i) => ({ goalId: goal.id, title: m.title.trim(), startDate: m.startDate || defaultStart(clean[i - 1], goal.startDate, m.targetDate), targetDate: m.targetDate, order: i })),
     );
   }
   return goal;
@@ -129,7 +134,7 @@ async function goalMilestones(goalId: string) {
 export async function addMilestone(goalId: string, data: Omit<NewRecord<'milestone'>, 'goalId'>): Promise<Milestone> {
   const ms = await goalMilestones(goalId);
   const goal = (await db.entity('goal').get(goalId))!;
-  const startDate = data.startDate || defaultStart(ms.at(-1)?.targetDate, goal.startDate, data.targetDate ?? null);
+  const startDate = data.startDate || defaultStart(ms.at(-1), goal.startDate, data.targetDate ?? null);
   return create('milestone', { ...data, startDate, goalId, order: (ms.at(-1)?.order ?? -1) + 1 });
 }
 

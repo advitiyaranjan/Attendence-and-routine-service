@@ -212,5 +212,40 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     const notes = live(await db.entity('note').toArray());
     ctx.notes = notes.slice(0, 20).map((n) => ({ ref: refOf('n', n.id), title: n.title, subject: subjectName(n.subjectId), excerpt: n.body.slice(0, 300) }));
   }
+  return fitContext(ctx, CONTEXT_BUDGET);
+}
+
+/** Stay well under the server's cap (150k characters) so a large timetable or goal never blocks AI Pilot. */
+const CONTEXT_BUDGET = 100_000;
+
+/**
+ * Shrinks the context until it fits: repeatedly halves the largest list (keeping its first, most
+ * relevant entries, since lists are sorted by relevance or date) and notes what was left out.
+ */
+export function fitContext(ctx: Record<string, unknown>, budget: number): Record<string, unknown> {
+  const omitted: Record<string, number> = {};
+  for (let guard = 0; guard < 200 && JSON.stringify(ctx).length > budget; guard++) {
+    let biggest: { owner: Record<string, unknown>; key: string; path: string; size: number } | null = null;
+    const visit = (node: unknown, path: string) => {
+      if (Array.isArray(node)) node.forEach((x, i) => visit(x, `${path}[${i}]`));
+      else if (node && typeof node === 'object') {
+        for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+          if (Array.isArray(v) && v.length > 1) {
+            const size = JSON.stringify(v).length;
+            if (!biggest || size > biggest.size) biggest = { owner: node as Record<string, unknown>, key: k, path: path ? `${path}.${k}` : k, size };
+          }
+          visit(v, path ? `${path}.${k}` : k);
+        }
+      }
+    };
+    visit(ctx, '');
+    if (!biggest) break;
+    const { owner, key, path } = biggest as { owner: Record<string, unknown>; key: string; path: string };
+    const list = owner[key] as unknown[];
+    const keep = Math.max(1, Math.floor(list.length / 2));
+    omitted[path.replace(/\[\d+\]/g, '[]')] = (omitted[path.replace(/\[\d+\]/g, '[]')] ?? 0) + list.length - keep;
+    owner[key] = list.slice(0, keep);
+  }
+  if (Object.keys(omitted).length) ctx.omittedForSize = omitted;
   return ctx;
 }

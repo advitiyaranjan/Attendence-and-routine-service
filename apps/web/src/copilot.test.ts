@@ -250,6 +250,15 @@ describe('subjects and settings', () => {
     await db.entity('task').clear();
   });
 
+  it('shrinks an oversized context to fit, keeping the first entries', async () => {
+    const { fitContext } = await import('./lib/copilot/context');
+    const ctx = { now: { date: '2026-10-12' }, goals: [{ title: 'GS Paper 1', milestones: Array.from({ length: 400 }, (_, i) => ({ title: `Milestone ${i} `.repeat(20) })) }] };
+    const out = fitContext(ctx, 20_000);
+    expect(JSON.stringify(out).length).toBeLessThanOrEqual(20_000);
+    expect((out.goals as any)[0].milestones[0].title).toContain('Milestone 0 ');
+    expect(out.omittedForSize).toMatchObject({ 'goals[].milestones': expect.any(Number) });
+  });
+
   it('changes a weekly class from today on, keeping history', async () => {
     const r = await prepareAction('update_weekly_class', { target: { ref: null, subject: 'DBMS', weekday: 5, time: '14:00' }, changes: { weekday: null, startTime: '15:00', endTime: null, room: 'Lab 2' } });
     expect(r.kind).toBe('proposal');

@@ -45,7 +45,7 @@ aiRouter.use(allowAi);
 const context = z
   .unknown()
   .optional()
-  .refine((v) => JSON.stringify(v ?? {}).length <= 40_000, 'Context too large');
+  .refine((v) => JSON.stringify(v ?? {}).length <= 150_000, 'Context too large');
 
 aiRouter.post('/timetable', upload.single('file'), async (req, res) => {
   if (!req.file) throw new HttpError(400, 'no_file', 'Choose a timetable file to upload.');

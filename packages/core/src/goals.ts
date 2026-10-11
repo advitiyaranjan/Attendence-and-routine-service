@@ -119,9 +119,9 @@ export function currentMilestone(milestones: readonly Milestone[]): Milestone | 
 
 export type MilestoneState = 'done' | 'active' | 'upcoming' | 'overdue' | 'blocked';
 
-/** Today falls within the milestone's start → end dates (an open start or end counts as reached). */
+/** Today falls within the milestone's start → end dates. Both are needed: an undated milestone is never active by date alone. */
 export function milestoneInWindow(m: Milestone, today: ISODate): boolean {
-  return !!m.startDate && m.startDate <= today && (!m.targetDate || today <= m.targetDate);
+  return !!m.startDate && !!m.targetDate && m.startDate <= today && today <= m.targetDate;
 }
 
 export function milestoneState(m: Milestone, today: ISODate, currentId: string | null): MilestoneState {

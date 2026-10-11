@@ -69,6 +69,8 @@ describe('roadmap', () => {
       ms('m3', 2, { startDate: '2026-03-15', targetDate: '2026-05-01' }),
     ];
     expect(activeMilestones(milestones, '2026-03-01').map((m) => m.id)).toEqual(['m1', 'm2']);
+    // Undated milestones are never active by date alone, even with a past start date.
+    expect(activeMilestones([ms('u1', 0, { startDate: '2026-01-01' }), ms('u2', 1, { startDate: '2026-01-01' })], '2026-03-01').map((m) => m.id)).toEqual(['u1']);
     // The current stage is not active before its start date.
     expect(milestoneState(milestones[2]!, '2026-03-01', 'm3')).toBe('upcoming');
   });
