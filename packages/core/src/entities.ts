@@ -565,9 +565,9 @@ export const settingsSchema = syncMeta.extend({
    */
   aiPower: z.enum(['low', 'balanced', 'high', 'maximum']).default('balanced'),
   weekStartsOn: z.union([z.literal(0), z.literal(1)]).default(1),
-  theme: z.enum(['system', 'light', 'dark']).default('dark'),
+  theme: z.enum(['system', 'light', 'dark']).default('system'),
   /** A named accent (indigo, teal, …) or a custom #rrggbb colour. */
-  accent: z.string().max(20).default('blue'),
+  accent: z.string().max(20).default('indigo'),
   /** 'compact' fits more on screen (slightly smaller type and spacing). */
   density: z.enum(['comfortable', 'compact']).default('comfortable'),
   /** Turn off animations in the app, on top of the device's own reduced-motion setting. */

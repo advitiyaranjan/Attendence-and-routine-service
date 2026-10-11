@@ -25,7 +25,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       className={cn(
         'inline-flex select-none items-center justify-center gap-1.5 rounded-xl font-medium transition-[background-color,opacity,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
-        size === 'sm' ? 'min-h-10 px-2.5 text-sm' : size === 'lg' ? 'h-12 px-5 text-[15px]' : size === 'icon' ? 'shrink-0 p-0' : 'h-10 px-4 text-sm',
+        size === 'sm' ? 'h-8 px-2.5 text-sm' : size === 'lg' ? 'h-12 px-5 text-[15px]' : size === 'icon' ? 'shrink-0 p-0' : 'h-10 px-4 text-sm',
         variant === 'primary' && 'bg-accent text-accent-ink shadow-sm hover:opacity-90',
         variant === 'secondary' && 'border border-line bg-surface text-ink shadow-card hover:bg-surface-2',
         variant === 'ghost' && 'text-ink-2 hover:bg-surface-2 hover:text-ink',
@@ -42,7 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 export function Card({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn('rounded-[20px] border border-line bg-surface p-4 shadow-card sm:p-6', className)} {...rest}>
+    <div className={cn('rounded-2xl border border-line bg-surface p-4 shadow-card sm:p-5', className)} {...rest}>
       {children}
     </div>
   );
@@ -50,8 +50,8 @@ export function Card({ className, children, ...rest }: React.HTMLAttributes<HTML
 
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-center justify-between gap-2">
-      <h2 className="text-sm font-medium tracking-tight text-ink">{children}</h2>
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">{children}</h2>
       {action}
     </div>
   );
@@ -201,7 +201,7 @@ export function riskColor(risk: RiskLevel) {
 export function Meter({ value, color, marker, label }: { value: number | null; color: string; marker?: number; label: string }) {
   const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
   return (
-    <div className="relative h-1.5 w-full rounded-full bg-line" role={value === null ? 'img' : 'meter'} aria-valuenow={value === null ? undefined : pct} aria-valuemin={value === null ? undefined : 0} aria-valuemax={value === null ? undefined : 100} aria-label={value === null ? `${label}: no data yet` : label}>
+    <div className="relative h-2 w-full rounded-full bg-surface-2" role="meter" aria-valuenow={value ?? undefined} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
       {marker !== undefined && (
         <div className="absolute -top-0.5 h-3 w-0.5 rounded-full bg-ink-2" style={{ left: `calc(${marker}% - 1px)` }} title={`Minimum ${marker}%`} />

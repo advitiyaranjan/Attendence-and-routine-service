@@ -12,7 +12,7 @@
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { db, kvGet } from './lib/db';
-import { computeDue, markReadOnDevice, osOptions, recordDelivered, snoozeLocal, type NotifyItem } from './lib/notify-core';
+import { computeDue, osOptions, recordDelivered, snoozeLocal, type NotifyItem } from './lib/notify-core';
 import { loadSettings } from './lib/queries';
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision: string | null }> };
@@ -117,7 +117,7 @@ self.addEventListener('notificationclick', (event) => {
       }
 
       // App closed: mark it read on this device now…
-      await markReadOnDevice([item.id]).catch(() => undefined);
+      await db.notifications.update(item.id, { readAt: new Date().toISOString() }).catch(() => undefined);
       // …and on the server (so other devices see it read too). Opening is just "read".
       if (action === 'open' || action === 'start') void serverAction(item, 'open');
 

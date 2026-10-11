@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#0b0d12" />
+    <meta name="theme-color" content="#4f46e5" />
     <meta name="description" content="Timetable, attendance, planning and revision — organised automatically." />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -11,7 +11,7 @@
     <script>
       // Apply the saved theme before first paint to avoid a flash.
       try {
-        var t = localStorage.getItem('sos-theme') || 'dark';
+        var t = localStorage.getItem('sos-theme') || 'system';
         if (t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark');
         }

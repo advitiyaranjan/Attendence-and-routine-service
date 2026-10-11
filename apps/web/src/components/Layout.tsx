@@ -203,7 +203,7 @@ function Popover({ open, onClose, title, children, width = 'md:w-96' }: { open: 
 
 function IconButton({ label, onClick, children, badge }: { label: string; onClick: () => void; children: ReactNode; badge?: number }) {
   return (
-    <button onClick={onClick} title={label} className="relative flex size-11 items-center justify-center rounded-xl text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink" aria-label={label}>
+    <button onClick={onClick} className="relative flex size-10 items-center justify-center rounded-xl text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink" aria-label={label}>
       {children}
       {!!badge && (
         <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold text-accent-ink">{badge > 9 ? '9+' : badge}</span>
@@ -288,7 +288,7 @@ function ProfileMenu() {
   };
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="flex size-11 items-center justify-center rounded-xl hover:bg-surface-2" aria-label="Profile and menu" aria-expanded={open}>
+      <button onClick={() => setOpen((o) => !o)} className="flex size-10 items-center justify-center rounded-xl hover:bg-surface-2" aria-label="Profile and menu" aria-expanded={open}>
         <Avatar />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} title="Profile" width="md:w-72">
@@ -612,8 +612,8 @@ export function Layout() {
     <div className="min-h-dvh md:flex">
       <aside
         className={cn(
-          'app-sidebar safe-top sticky top-0 hidden h-dvh shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200 md:flex',
-          wide ? 'w-60' : 'w-[4.5rem]',
+          'safe-top sticky top-0 hidden h-dvh shrink-0 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200 md:flex',
+          wide ? 'w-64' : 'w-[4.5rem]',
         )}
       >
         <div className={cn('flex items-center gap-2.5 py-5', wide ? 'px-5' : 'flex-col px-0')}>
@@ -661,7 +661,7 @@ export function Layout() {
 
       <div className="min-w-0 flex-1">
         <header className="safe-top sticky top-0 z-30 border-b border-line bg-page/85 backdrop-blur-md">
-          <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-2 px-3 md:h-16 md:px-8">
+          <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-3 md:h-16 md:px-8">
             <div className="flex min-w-0 items-center gap-2 md:hidden">
               <AppLogo size="sm" />
               <span className="truncate text-[15px] font-semibold tracking-tight">Student OS</span>
@@ -670,7 +670,7 @@ export function Layout() {
               onClick={() => navigate('/search')}
               className="hidden h-10 w-full max-w-sm items-center gap-2 rounded-xl border border-line bg-surface px-3 text-sm text-muted shadow-card hover:text-ink-2 md:flex"
             >
-              <Search className="size-4" /> Search your workspace…
+              <Search className="size-4" /> Search everything…
               <kbd className="ml-auto rounded-md border border-line px-1.5 text-[11px]">/</kbd>
             </button>
             <div className="ml-auto flex items-center gap-0.5">
@@ -684,7 +684,7 @@ export function Layout() {
                 aria-label="Ask AI Pilot"
                 title="AI Pilot (.)"
               >
-                <Sparkles className="size-[18px] text-accent" /><span className="hidden sm:inline">AI</span>
+                <Sparkles className="size-[18px] text-accent" /> AI
               </button>
               <ProfileMenu />
             </div>
@@ -693,20 +693,20 @@ export function Layout() {
         {!online && (
           <div className="border-b border-line bg-surface-2 px-4 py-1.5 text-center text-xs text-ink-2">● Offline. Everything still works, and changes sync when you reconnect.</div>
         )}
-        <main className="app-main mx-auto max-w-[1440px] px-4 pt-5 md:px-6 md:pt-8 xl:px-10">
+        <main className="mx-auto max-w-6xl px-4 pb-32 pt-5 md:px-8 md:pb-16 md:pt-7">
           <ErrorBoundary resetKey={location.pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
       </div>
 
-      <nav className="mobile-nav hide-on-kb safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 shadow-[0_-8px_24px_-12px_rgb(16_24_40/0.18)] backdrop-blur-xl md:hidden" aria-label="Main">
+      <nav className="hide-on-kb safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/90 shadow-[0_-8px_24px_-12px_rgb(16_24_40/0.18)] backdrop-blur-xl md:hidden" aria-label="Main">
         <div className="flex">
           {shown(MOBILE_NAV).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cn('group relative flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
+            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => cn('group flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2 text-[11px] font-medium', isActive ? 'text-ink' : 'text-muted')}>
               {({ isActive }) => (
                 <>
-                  <span className={cn('flex h-7 w-9 items-center justify-center transition-colors', isActive && 'text-accent')}>
+                  <span className={cn('flex h-7 w-12 items-center justify-center rounded-full transition-colors', isActive && 'bg-accent-soft text-accent')}>
                     <Icon className="size-5" />
                   </span>
                   {label}
@@ -715,9 +715,9 @@ export function Layout() {
             </NavLink>
           ))}
           <button onClick={() => window.dispatchEvent(new Event('sos-quick-add'))} className="flex flex-1 flex-col items-center justify-center" aria-label="Add">
-            <span className="flex size-9 items-center justify-center rounded-xl bg-accent text-accent-ink shadow-pop active:scale-95">
+            <span className="flex size-11 items-center justify-center rounded-2xl bg-accent text-accent-ink shadow-pop active:scale-95">
               <Plus className="size-5" />
-            </span><span className="mt-0.5 text-[11px] text-ink-2">Add</span>
+            </span>
           </button>
         </div>
       </nav>
