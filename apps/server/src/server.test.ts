@@ -4,6 +4,7 @@ import { timetableExtractionSchema, type SyncOperation } from '@student-os/core'
 import { createApp } from './app';
 import { validateOperation } from './modules/sync/service';
 import { GeminiClient, statusOf, ThinkingLevel } from './modules/ai/gemini';
+import { sanitizeSvg } from './modules/ai/service';
 import { HttpError } from './lib/http';
 import { prisma } from './db';
 import { signActionToken, verifyActionToken } from './modules/push/scheduler';
@@ -161,6 +162,17 @@ describe('Gemini output validation', () => {
 
     generateContent.mockReset().mockResolvedValueOnce({ candidates: [{ content: { parts: [{ text: 'no picture' }] } }], usageMetadata: {} });
     await expect(client.generateImage({ userId: null, prompt: 'x', models: ['img-a'] })).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('cleans AI-drawn SVG: no scripts, handlers, external links or embedded HTML', () => {
+    const out = sanitizeSvg(
+      'Here: <svg viewBox="0 0 10 10"><script>alert(1)</script><rect onclick="x()" width="5"/><a href="https://evil.example"><text>Hi</text></a><use href="#arrow"/><foreignObject><div/></foreignObject></svg> done',
+    )!;
+    expect(out.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+    expect(out.endsWith('</svg>')).toBe(true);
+    expect(out).not.toMatch(/script|onclick|evil\.example|foreignObject/);
+    expect(out).toContain('href="#arrow"');
+    expect(sanitizeSvg('no picture here')).toBeNull();
   });
 
   it('reports unavailability when no API key is configured', async () => {

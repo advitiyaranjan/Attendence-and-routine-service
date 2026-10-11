@@ -48,6 +48,8 @@ async function compressImage(mimeType: string, data: string, maxSide = 1536): Pr
     const img = new Image();
     img.src = original;
     await img.decode();
+    // An SVG without an explicit size can report 0×0: keep it as is (it scales cleanly anyway).
+    if (!img.naturalWidth || !img.naturalHeight) return original;
     const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(img.naturalWidth * scale);

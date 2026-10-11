@@ -13,6 +13,7 @@ import {
   reviewSummarySchema,
   timetableExtractionSchema,
 } from '@student-os/core';
+import { z } from 'zod';
 import { env } from '../../env';
 import { HttpError } from '../../lib/http';
 import { GeminiClient, ThinkingLevel } from './gemini';
@@ -95,6 +96,24 @@ export function powerTier(power: AIPower, chain: string[]): { models: string[]; 
   }
 }
 
+/**
+ * Keeps only a plain, self-contained SVG: no scripts, event handlers, external links or embedded
+ * HTML. Returns null when the text isn't an SVG at all.
+ */
+export function sanitizeSvg(raw: string): string | null {
+  const start = raw.indexOf('<svg');
+  const end = raw.lastIndexOf('</svg>');
+  if (start === -1 || end === -1) return null;
+  let svg = raw.slice(start, end + 6);
+  svg = svg
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*')/gi, '')
+    .replace(/\s(?:xlink:)?href\s*=\s*("(?!#)[^"]*"|'(?!#)[^']*')/gi, '');
+  if (!/\sxmlns=/.test(svg.slice(0, 200))) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  return svg;
+}
+
 function contextPart(context: unknown): Part {
   return { text: `CONTEXT:\n${JSON.stringify(context ?? {})}` };
 }
@@ -168,9 +187,28 @@ export class AIService {
     return { reply: raw.reply, intents, rejected, clarification: raw.clarification, image: raw.image };
   }
 
-  /** A picture for AI Pilot's chat. */
-  async image(userId: string | null, prompt: string) {
-    return this.gemini.generateImage({ userId, prompt, models: env.GEMINI_IMAGE_MODELS });
+  /**
+   * A picture for AI Pilot's chat. Image models aren't on the free tier, so when they're unavailable
+   * the free text model draws the picture as an SVG diagram instead.
+   */
+  async image(userId: string | null, prompt: string): Promise<{ mimeType: string; data: string }> {
+    try {
+      return await this.gemini.generateImage({ userId, prompt, models: env.GEMINI_IMAGE_MODELS });
+    } catch (err) {
+      if (err instanceof HttpError && err.code === 'ai_misconfigured' && /API key/.test(err.message)) throw err;
+      console.warn('[ai:image] image models unavailable, drawing an SVG diagram instead');
+    }
+    const { svg } = await this.gemini.generateJson({
+      feature: 'image_svg',
+      userId,
+      system: P.SVG_SYSTEM,
+      parts: [{ text: prompt }],
+      schema: z.object({ svg: z.string().min(20).max(200_000) }),
+      thinking: ThinkingLevel.LOW,
+    });
+    const clean = sanitizeSvg(svg);
+    if (!clean) throw new HttpError(422, 'ai_no_image', "The AI couldn't draw that. Try describing the picture differently.");
+    return { mimeType: 'image/svg+xml', data: Buffer.from(clean, 'utf8').toString('base64') };
   }
 
   async generateFlashcards(userId: string | null, topic: string, notes: string | undefined, count: number) {
