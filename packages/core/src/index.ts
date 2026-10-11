@@ -13,3 +13,4 @@ export * from './notifications';
 export * from './actions';
 export * from './catchup';
 export * from './goals';
+export * from './mess';

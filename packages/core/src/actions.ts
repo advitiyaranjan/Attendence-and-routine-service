@@ -713,6 +713,40 @@ export const ACTIONS = {
     permissions: ['updateProfile'],
     affects: ['Profile'],
   }),
+  set_mess_menu: define({
+    name: 'set_mess_menu',
+    description:
+      "Set or change the student's mess (hostel/canteen) menu, e.g. from a photo of the mess schedule. Shown only on the home greeting while each meal is served; never on the calendar or as tasks. " +
+      'replace=true replaces the whole menu (a new schedule); otherwise meals are merged by name and only the days given change. Days are sunday…saturday.',
+    params:
+      '{ replace?: boolean, enabled?: boolean, meals?: [ { name: e.g. Breakfast|Lunch|Snacks|Dinner, start?: HH:MM, end?: HH:MM, menu?: { monday?: "dishes", tuesday?, wednesday?, thursday?, friday?, saturday?, sunday? } } ], removeMeals?: [name] }',
+    schema: z
+      .object({
+        replace: z.boolean().nullish().transform((v) => !!v),
+        enabled: z.boolean().nullish().transform((v) => v ?? null),
+        meals: z
+          .array(
+            z.object({
+              name: z.string().trim().min(1).max(40),
+              start: optTime,
+              end: optTime,
+              menu: z
+                .object(Object.fromEntries(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map((d) => [d, optStr(300)])) as Record<string, ReturnType<typeof optStr>>)
+                .partial()
+                .nullish()
+                .transform((v) => v ?? {}),
+            }),
+          )
+          .max(8)
+          .nullish()
+          .transform((v) => v ?? []),
+        removeMeals: z.array(z.string().trim().min(1).max(40)).max(8).nullish().transform((v) => v ?? []),
+      })
+      .refine((v) => v.meals.length || v.removeMeals.length || v.enabled !== null, 'Nothing to change in the mess menu'),
+    kind: 'modify',
+    permissions: ['updateProfile'],
+    affects: ['Home greeting'],
+  }),
   navigate: define({
     name: 'navigate',
     description: 'Offer a link to a page: today, calendar, attendance, tasks, revision, deadlines, subjects, notes, analytics, reminders, review, settings.',
@@ -818,6 +852,7 @@ export const ACTION_AREA: Record<ActionName, AIArea | null> = {
   update_basket: 'settings',
   update_settings: 'settings',
   update_profile: 'profile',
+  set_mess_menu: 'profile',
   navigate: null,
 };
 

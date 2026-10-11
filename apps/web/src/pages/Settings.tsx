@@ -5,10 +5,11 @@
  */
 import { useEffect, type ComponentType } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
-import { Bell, CalendarRange, ShoppingBasket, ChevronLeft, ChevronRight, Database, GraduationCap, Palette, Repeat, Sparkles, UserRound, UserRoundCog, type LucideIcon } from 'lucide-react';
+import { Bell, CalendarRange, ShoppingBasket, ChevronLeft, ChevronRight, Database, GraduationCap, Palette, Repeat, Sparkles, UserRound, UserRoundCog, UtensilsCrossed, type LucideIcon } from 'lucide-react';
 import type { Settings as SettingsT } from '@student-os/core';
 import { cn } from '../components/ui';
 import { BasketsSection } from '../components/settings/Baskets';
+import { MessSection } from '../components/settings/MessMenu';
 import { AcademicSection, AccountSection, AISection, AppearanceSection, AttendanceSection, DataSection, NotificationsSection, ProfileSection, StudySection } from '../components/settings/sections';
 import { useMedia, useSettings } from '../lib/hooks';
 import { useApp, type User } from '../lib/store';
@@ -38,6 +39,7 @@ const GROUPS: Array<{ title: string; sections: SectionDef[] }> = [
       { id: 'baskets', title: 'Baskets', icon: ShoppingBasket, summary: () => 'College, coaching… each with its own rules', Component: BasketsSection },
       { id: 'academic', title: 'Semester & holidays', icon: CalendarRange, summary: (s) => [s.semesterEnd ? `Ends ${s.semesterEnd}` : 'Semester dates', `${s.holidays.length} holiday${s.holidays.length === 1 ? '' : 's'}`].join(' · '), Component: AcademicSection },
       { id: 'attendance', title: 'Attendance', icon: GraduationCap, summary: (s) => `Min ${s.minAttendance}% · target ${s.targetAttendance}%`, Component: AttendanceSection },
+      { id: 'mess', title: 'Mess menu', icon: UtensilsCrossed, summary: (s) => (!s.mess.meals.length ? 'Meals on Home at mess times' : `${s.mess.enabled ? 'On' : 'Off'} · ${s.mess.meals.map((m) => m.name).join(', ')}`), Component: MessSection },
       { id: 'study', title: 'Study & revision', icon: Repeat, summary: (s) => `${Math.round((s.dailyStudyTargetMinutes / 60) * 10) / 10} h a day · sleep ${s.sleepWindow.start}–${s.sleepWindow.end}`, Component: StudySection },
     ],
   },

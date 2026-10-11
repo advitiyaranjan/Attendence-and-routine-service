@@ -49,6 +49,8 @@ import {
   goalCategory,
   type Goal,
   type Milestone,
+  type MessMeal,
+  mealEmoji,
 } from '@student-os/core';
 import { addMilestone, createGoal, deleteGoal, deleteMilestone, setGoalStatus, setMilestoneStatus, updateMilestone } from '../goals';
 import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, rescheduleClass } from '../actions';
@@ -1813,6 +1815,57 @@ const H: Record<ActionName, Handler> = {
     async execute(p) {
       await saveSettings(p.resolved.patch as Partial<Settings>);
       return '✓ Settings updated';
+    },
+  },
+
+  set_mess_menu: {
+    async prepare(params: any, env) {
+      const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+      const current = env.settings.mess;
+      const same = (a: string, b: string) => norm(a) === norm(b);
+      let meals: MessMeal[] = params.replace ? [] : current.meals.map((m) => ({ ...m, menu: [...m.menu] }));
+      const lines: string[] = [];
+      for (const name of params.removeMeals as string[]) {
+        if (!meals.some((m) => same(m.name, name))) return err(`Your mess menu has no meal called "${name}".`);
+        meals = meals.filter((m) => !same(m.name, name));
+        lines.push(`Remove ${name}`);
+      }
+      for (const input of params.meals as Array<{ name: string; start: string | null; end: string | null; menu: Record<string, string | null | undefined> }>) {
+        let meal = meals.find((m) => same(m.name, input.name));
+        if (!meal) {
+          if (!input.start || !input.end) return err(`Give the serving time for ${input.name} (start and end).`);
+          meal = { name: input.name, start: input.start, end: input.end, menu: ['', '', '', '', '', '', ''] };
+          meals.push(meal);
+        }
+        if (input.start) meal.start = input.start;
+        if (input.end) meal.end = input.end;
+        if (timeToMinutes(meal.end) <= timeToMinutes(meal.start)) return err(`${meal.name} must end after it starts.`);
+        const changed: string[] = [];
+        for (const [i, day] of DAYS.entries()) {
+          const v = input.menu[day];
+          if (v !== null && v !== undefined && v !== meal.menu[i]) {
+            meal.menu[i] = v;
+            changed.push(day);
+          }
+        }
+        lines.push(`${mealEmoji(meal.name)} ${meal.name} · ${range(meal.start, meal.end)}`);
+        // Monday first, as on a printed mess chart.
+        for (const i of [1, 2, 3, 4, 5, 6, 0]) if (changed.includes(DAYS[i]!)) lines.push(`   ${WEEKDAYS[i]![0]!.toUpperCase()}${WEEKDAYS[i]!.slice(1, 3)}: ${meal.menu[i]}`);
+      }
+      meals.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+      const enabled = params.enabled ?? current.enabled;
+      if (enabled !== current.enabled) lines.push(enabled ? 'Show the menu on Home' : 'Hide the menu on Home');
+      if (!lines.length) return err('Your mess menu already looks like that.');
+      return proposal('set_mess_menu', params, {
+        title: params.replace ? 'Set mess menu' : 'Update mess menu',
+        heading: 'Mess menu · shown on Home at meal times only',
+        lines,
+        resolved: { mess: { enabled, meals } },
+      });
+    },
+    async execute(p) {
+      await saveSettings({ mess: p.resolved.mess as Settings['mess'] });
+      return '✓ Mess menu saved';
     },
   },
 

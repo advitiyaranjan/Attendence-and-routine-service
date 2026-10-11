@@ -260,6 +260,45 @@ describe('subjects and settings', () => {
     await db.entity('task').clear();
   });
 
+  it('sets the mess menu from a schedule and edits one meal, without creating anything else', async () => {
+    const parse = (params: Record<string, unknown>) => {
+      const { intents, rejected } = validateIntents([{ action: 'set_mess_menu', params }]);
+      expect(rejected).toEqual([]);
+      return intents[0]!.params as Record<string, unknown>;
+    };
+    const before = { tasks: await db.entity('task').count(), events: await db.entity('calendarEvent').count(), reminders: await db.entity('reminder').count() };
+    const set = await prepareAction(
+      'set_mess_menu',
+      parse({
+        replace: true,
+        meals: [
+          { name: 'Lunch', start: '12:45', end: '14:30', menu: { monday: 'Aloo Matar ki Sabji, Bedai, Veg Biryani, Papad, Veg Raita', sunday: 'Chhole Bhature, Jeera Rice' } },
+          { name: 'Breakfast', start: '7:30 am', end: '9:30 am', menu: { monday: 'Idli, Sambhar, Chutney' } },
+        ],
+      }),
+    );
+    expect(set).toMatchObject({ kind: 'proposal', proposal: { title: 'Set mess menu' } });
+    if (set.kind !== 'proposal') return;
+    expect(set.proposal.lines).toContain('   Mon: Idli, Sambhar, Chutney');
+    await confirmProposal(set.proposal);
+    let mess = (await getSettings()).mess;
+    expect(mess.meals.map((m) => [m.name, m.start, m.end])).toEqual([
+      ['Breakfast', '07:30', '09:30'],
+      ['Lunch', '12:45', '14:30'],
+    ]);
+    expect(mess.meals[1]!.menu[0]).toBe('Chhole Bhature, Jeera Rice');
+
+    const edit = await prepareAction('set_mess_menu', parse({ meals: [{ name: 'lunch', menu: { sunday: 'Rajma Chawal' } }] }));
+    expect(edit).toMatchObject({ kind: 'proposal', proposal: { lines: ['🍛 Lunch · 12:45 PM – 2:30 PM', '   Sun: Rajma Chawal'] } });
+    if (edit.kind === 'proposal') await confirmProposal(edit.proposal);
+    mess = (await getSettings()).mess;
+    expect(mess.meals[1]!.menu[0]).toBe('Rajma Chawal');
+    expect(mess.meals[1]!.menu[1]).toBe('Aloo Matar ki Sabji, Bedai, Veg Biryani, Papad, Veg Raita');
+
+    expect(await prepareAction('set_mess_menu', parse({ meals: [{ name: 'Dinner', menu: { monday: 'Roti' } }] }))).toMatchObject({ kind: 'error' });
+    expect({ tasks: await db.entity('task').count(), events: await db.entity('calendarEvent').count(), reminders: await db.entity('reminder').count() }).toEqual(before);
+  });
+
   it('shrinks an oversized context to fit, keeping the first entries', async () => {
     const { fitContext } = await import('./lib/copilot/context');
     const ctx = { now: { date: '2026-10-12' }, goals: [{ title: 'GS Paper 1', milestones: Array.from({ length: 400 }, (_, i) => ({ title: `Milestone ${i} `.repeat(20) })) }] };

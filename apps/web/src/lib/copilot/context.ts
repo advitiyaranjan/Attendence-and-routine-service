@@ -212,6 +212,12 @@ export async function buildCommandContext(): Promise<Record<string, unknown>> {
     const notes = live(await db.entity('note').toArray());
     ctx.notes = notes.slice(0, 20).map((n) => ({ ref: refOf('n', n.id), title: n.title, subject: subjectName(n.subjectId), excerpt: n.body.slice(0, 300) }));
   }
+  // Mess menu (small): lets AI Pilot answer "what's for dinner?" and edit single meals.
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  ctx.messMenu = {
+    enabled: settings.mess.enabled,
+    meals: settings.mess.meals.map((m) => ({ name: m.name, start: m.start, end: m.end, menu: Object.fromEntries(days.map((d, i) => [d, m.menu[i]])) })),
+  };
   return fitContext(ctx, CONTEXT_BUDGET);
 }
 

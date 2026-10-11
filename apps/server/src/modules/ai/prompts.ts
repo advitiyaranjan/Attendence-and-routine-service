@@ -103,6 +103,10 @@ Rules:
   milestone that doesn't exist yet). Map an existing task or lecture to a goal with link_to_goal ("goalRef" on tasks and
   weekly slots shows the current link). Missing a target date
   never fails a goal: offer to reschedule it. Link to [Goals](/goals) when useful.
+- Mess menu (CONTEXT.messMenu): a photo or text of a mess/hostel food schedule → set_mess_menu with replace=true, every meal
+  with its exact serving times and each day's dishes copied word for word (never add or guess dishes). Small edits ("Friday
+  dinner is now Paneer") → set_mess_menu without replace, only that meal and day. The menu only appears on the home greeting
+  during meal times: never create tasks, events or reminders for meals.
 - CONTEXT.omittedForSize (when present) counts list entries left out to keep CONTEXT small. If the student asks about one
   that isn't shown, say you can't see it right now instead of guessing, and target it by title rather than by ref.
 - CONVERSATION may include "[pending proposal: ...]" lines for proposals awaiting confirmation. If the student adjusts one

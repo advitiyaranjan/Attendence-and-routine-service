@@ -522,6 +522,15 @@ export const appPreferencesSchema = z.object({
 });
 export type AppPreferences = z.infer<typeof appPreferencesSchema>;
 
+/** One meal served by the mess, with its menu for each weekday (index 0 = Sunday). */
+export const messMealSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  start: hhmm,
+  end: hhmm,
+  menu: z.array(z.string().max(300)).length(7).default(['', '', '', '', '', '', '']),
+});
+export type MessMeal = z.infer<typeof messMealSchema>;
+
 export const settingsSchema = syncMeta.extend({
   profile: z
     .object({
@@ -568,6 +577,13 @@ export const settingsSchema = syncMeta.extend({
   notifications: notificationSettingsSchema.prefault({}),
   app: appPreferencesSchema.prefault({}),
   aiPermissions: aiPermissionsSchema.prefault({}),
+  /** Mess menu, shown only on the home greeting during each meal's serving time. */
+  mess: z
+    .object({
+      enabled: z.boolean().default(true),
+      meals: z.array(messMealSchema).max(8).default([]),
+    })
+    .prefault({}),
   onboarded: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof settingsSchema>;

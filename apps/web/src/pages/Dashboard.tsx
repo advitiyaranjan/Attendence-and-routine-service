@@ -5,6 +5,9 @@ import {
   HOME_SECTIONS,
   type HomeSection,
   computeStreak,
+  currentMeal,
+  mealEmoji,
+  type CurrentMeal,
   diffDays,
   fmtPct,
   formatMinutes,
@@ -134,12 +137,16 @@ export function Dashboard() {
   const planLine = plan.length ? `Left today: ${plan.length > 1 ? plan.slice(0, -1).join(', ') + ' and ' + plan.at(-1) : plan[0]}.` : "You're all caught up for today.";
   const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const firstName = settings.profile.name.split(' ')[0];
+  // While the mess serves a meal, the greeting says so (and shows today's menu). Nowhere else.
+  const meal = currentMeal(settings.mess, now.getDay(), now.getHours() * 60 + now.getMinutes());
 
   return (
     <HomeLayout.Provider value={settings.app.homeSections}>
     <div className="space-y-5">
       <Hero
-        greeting={`${greeting(now)}${firstName ? `, ${firstName}` : ''}`}
+        greeting={meal ? `Hey${firstName ? ` ${firstName}` : ''}, it's ${meal.meal.name.toLowerCase()} time` : `${greeting(now)}${firstName ? `, ${firstName}` : ''}`}
+        emoji={meal ? mealEmoji(meal.meal.name) : '👋'}
+        meal={meal}
         dateLabel={dateLabel}
         planLine={planLine}
         done={todayWorkDone}
@@ -493,7 +500,29 @@ const QUICK: Array<{ kind: string; label: string; icon: LucideIcon }> = [
 ];
 
 /** Command center: where the day stands (work done, streak, study time) and one-tap actions. */
-function Hero({ greeting, dateLabel, planLine, done, total, streak, studied, target }: { greeting: string; dateLabel: string; planLine: string; done: number; total: number; streak: number; studied: number; target: number }) {
+function Hero({
+  greeting,
+  emoji,
+  meal,
+  dateLabel,
+  planLine,
+  done,
+  total,
+  streak,
+  studied,
+  target,
+}: {
+  greeting: string;
+  emoji: string;
+  meal: CurrentMeal | null;
+  dateLabel: string;
+  planLine: string;
+  done: number;
+  total: number;
+  streak: number;
+  studied: number;
+  target: number;
+}) {
   const openQuickAdd = useApp((s) => s.openQuickAdd);
   const hasGoals = (useAll('goal')?.length ?? 0) > 0;
   const pct = total ? (done / total) * 100 : 0;
@@ -504,7 +533,17 @@ function Hero({ greeting, dateLabel, planLine, done, total, streak, studied, tar
       <div className="relative flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{dateLabel}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{greeting} 👋</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+            {greeting} {emoji}
+          </h1>
+          {meal && (
+            <div className="mt-2 rounded-xl bg-accent-soft px-3 py-2 text-sm">
+              <span className="font-medium text-ink">Today: {meal.items}.</span>{' '}
+              <span className="text-ink-2">
+                Served until {formatTime12(meal.meal.end)}. Have a good meal!
+              </span>
+            </div>
+          )}
           <p className="mt-1 text-sm text-ink-2">{planLine}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-ink-2">
