@@ -254,6 +254,23 @@ export const ACTIONS = {
     permissions: ['modifyTasks'],
     affects: ['Goals', 'Goal progress'],
   }),
+  delete_milestones: define({
+    name: 'delete_milestones',
+    description:
+      "Remove milestones from a goal's roadmap: the listed ones (refs or titles), or all of the goal's milestones (all=true), e.g. to replace the roadmap. Unfinished tasks inside them are deleted when deleteOpenTasks=true, otherwise kept on the goal; completed tasks are always kept.",
+    params: '{ goal: { ref? | title? }, milestones?: [ milestone ref or title ], all?: boolean, deleteOpenTasks?: boolean }',
+    schema: z
+      .object({
+        goal: goalTarget,
+        milestones: z.array(z.string().trim().min(1).max(200)).max(60).nullish().transform((v) => v ?? []),
+        all: z.boolean().nullish().transform((v) => !!v),
+        deleteOpenTasks: z.boolean().nullish().transform((v) => !!v),
+      })
+      .refine((v) => v.all || v.milestones.length > 0, 'List the milestones to remove, or set all'),
+    kind: 'delete',
+    permissions: ['deleteTasks'],
+    affects: ['Goal roadmap', 'Goal progress'],
+  }),
   delete_goal: define({
     name: 'delete_goal',
     description: 'Delete a goal and its milestones. Its tasks are kept (unlinked).',
@@ -765,6 +782,7 @@ export const ACTION_AREA: Record<ActionName, AIArea | null> = {
   update_milestone: 'tasks',
   add_goal_tasks: 'tasks',
   link_to_goal: 'tasks',
+  delete_milestones: 'tasks',
   delete_goal: 'tasks',
   create_class: 'schedule',
   cancel_class: 'schedule',

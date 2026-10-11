@@ -50,7 +50,7 @@ import {
   type Goal,
   type Milestone,
 } from '@student-os/core';
-import { addMilestone, createGoal, deleteGoal, setGoalStatus, setMilestoneStatus, updateMilestone } from '../goals';
+import { addMilestone, createGoal, deleteGoal, deleteMilestone, setGoalStatus, setMilestoneStatus, updateMilestone } from '../goals';
 import { addExtraClass, learnTopic, markAttendance, nextSubjectColor, rescheduleClass } from '../actions';
 import { flashcards as genFlashcards } from '../ai';
 import { db } from '../db';
@@ -811,6 +811,50 @@ const H: Record<ActionName, Handler> = {
         });
       }
       return x.goalId ? '✓ Linked to the goal' : '✓ Unlinked from the goal';
+    },
+  },
+
+  delete_milestones: {
+    async prepare(params: any) {
+      const r = await resolveGoal(params, 'goal', 'delete_milestones');
+      if (isPrepared(r)) return r;
+      const g = r.goal;
+      const ms = await goalMilestones(g.id);
+      let chosen: Milestone[];
+      if (params.all) chosen = ms;
+      else {
+        chosen = [];
+        for (const name of params.milestones as string[]) {
+          const hit = ms.find((m) => refOf(REF.milestone, m.id) === name) ?? titleMatches(name, ms)[0];
+          if (!hit) return err(`"${g.title}" has no milestone matching "${name}".`);
+          if (!chosen.includes(hit)) chosen.push(hit);
+        }
+      }
+      if (!chosen.length) return err(`"${g.title}" has no milestones to remove.`);
+      const ids = new Set(chosen.map((m) => m.id));
+      const tasks = (await db.entity('task').toArray()).filter((t) => !t.deletedAt && t.milestoneId && ids.has(t.milestoneId));
+      const open = tasks.filter((t) => t.status !== 'done').length;
+      const done = tasks.length - open;
+      return proposal('delete_milestones', params, {
+        title: `Remove ${chosen.length} milestone${chosen.length === 1 ? '' : 's'}`,
+        heading: `${g.icon} ${g.title}`,
+        lines: [
+          ...chosen.map((m) => `• ${m.title}`),
+          open ? (params.deleteOpenTasks ? `Deletes ${open} unfinished task${open === 1 ? '' : 's'} inside them.` : `Keeps ${open} unfinished task${open === 1 ? '' : 's'} on the goal.`) : '',
+          done ? `Keeps ${done} completed task${done === 1 ? '' : 's'} on the goal.` : '',
+        ].filter(Boolean),
+        resolved: { milestoneIds: chosen.map((m) => m.id) },
+      });
+    },
+    async execute(p) {
+      const ids = new Set(p.resolved.milestoneIds as string[]);
+      const tasks = (await db.entity('task').toArray()).filter((t) => !t.deletedAt && t.milestoneId && ids.has(t.milestoneId));
+      if ((p.params as any).deleteOpenTasks) await removeMany('task', tasks.filter((t) => t.status !== 'done').map((t) => t.id));
+      for (const id of ids) {
+        const m = await db.entity('milestone').get(id);
+        if (m && !m.deletedAt) await deleteMilestone(m);
+      }
+      return '✓ Milestones removed';
     },
   },
 

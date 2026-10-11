@@ -240,12 +240,22 @@ describe('subjects and settings', () => {
     await undoLog(linkLog.logId!);
     expect((await db.entity('classSchedule').get(dbmsSlots[0]!.id))!.goalId).toBeNull();
 
+    // Replace the roadmap: remove every milestone, deleting unfinished tasks and keeping completed ones.
+    const doneTask = (await db.entity('task').toArray()).find((t) => t.title === 'Revise OS')!;
+    await db.entity('task').update(doneTask.id, { status: 'done' });
+    const wipe = await prepareAction('delete_milestones', parse('delete_milestones', { goal: { title: 'Crack GATE' }, all: true, deleteOpenTasks: true }));
+    expect(wipe).toMatchObject({ kind: 'proposal', proposal: { title: 'Remove 3 milestones' } });
+    if (wipe.kind === 'proposal') await confirmProposal(wipe.proposal);
+    expect((await db.entity('milestone').toArray()).filter((m) => m.goalId === goal.id && !m.deletedAt)).toHaveLength(0);
+    expect((await db.entity('task').get(doneTask.id))!).toMatchObject({ deletedAt: null, goalId: goal.id, milestoneId: null });
+    expect((await db.entity('task').toArray()).find((t) => t.title === 'Mock test 1')!.deletedAt).not.toBeNull();
+
     const del = await prepareAction('delete_goal', parse('delete_goal', { target: { title: 'Crack GATE' } }));
     expect(del.kind).toBe('proposal');
     if (del.kind === 'proposal') await confirmProposal(del.proposal);
     expect((await db.entity('goal').get(goal.id))!.deletedAt).not.toBeNull();
     // Tasks survive, unlinked.
-    expect((await db.entity('task').get(linked[0]!.id))!).toMatchObject({ deletedAt: null, goalId: null, milestoneId: null });
+    expect((await db.entity('task').get(doneTask.id))!).toMatchObject({ deletedAt: null, goalId: null, milestoneId: null });
     // Leave no tasks behind for later tests.
     await db.entity('task').clear();
   });
